@@ -1,0 +1,67 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  searches  Search[]
+  favorites Favorite[]
+  
+  @@map("users")
+}
+
+model Search {
+  id          String   @id @default(cuid())
+  query       String
+  userId      String
+  results     Json     // Stores search results
+  createdAt   DateTime @default(now())
+  
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("searches")
+}
+
+model Video {
+  id           String   @id @default(cuid())
+  youtubeId    String   @unique
+  title        String
+  channelName  String
+  duration     String?
+  thumbnail    String
+  transcript   String?  @db.Text // Raw transcript
+  summary      String?  @db.Text // AI-processed summary
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  favorites    Favorite[]
+  
+  @@map("videos")
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  videoId   String
+  createdAt DateTime @default(now())
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, videoId])
+  @@map("favorites")
+}
