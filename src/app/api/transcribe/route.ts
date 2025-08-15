@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingVideo?.transcript) {
+      console.log('🔙 Backend returning cached transcript. Length:', existingVideo.transcript?.length || 'NO TRANSCRIPT');
       return NextResponse.json({ 
         transcript: existingVideo.transcript,
         cached: true 
@@ -32,19 +33,53 @@ export async function POST(request: NextRequest) {
     let transcriptionMethod: 'youtube' | 'whisper';
 
     try {
-      // Try YouTube Transcript API first (free and fast)
-      const transcriptData = await YoutubeTranscript.fetchTranscript(youtubeId, {
-        lang: language,
-      });
+      // Try YouTube Subtitles/Captions first (free and fast)
+      console.log(`🔍 Fetching YouTube subtitles for ${youtubeId}...`);
+      
+      // Try multiple approaches to get subtitles
+      let transcriptData;
+      const languagesToTry = ['auto', 'en', 'pl', language || 'en'];
+      
+      for (const lang of languagesToTry) {
+        try {
+          console.log(`🔍 Trying language: ${lang}`);
+          if (lang === 'auto') {
+            // Try without language specification (auto-detect)
+            transcriptData = await YoutubeTranscript.fetchTranscript(youtubeId);
+          } else {
+            transcriptData = await YoutubeTranscript.fetchTranscript(youtubeId, { lang });
+          }
+          console.log(`✅ Successfully fetched subtitles with language: ${lang}`);
+          break;
+        } catch (langError) {
+          console.log(`❌ Failed with language ${lang}:`, langError.message);
+          continue;
+        }
+      }
+      
+      if (!transcriptData) {
+        throw new Error('No subtitles available in any language');
+      }
+
+      console.log(`🔍 Raw transcript data:`, transcriptData);
+      console.log(`🔍 Transcript segments count:`, transcriptData?.length || 0);
+      console.log(`🔍 First segment:`, transcriptData?.[0]);
+      console.log(`🔍 Last segment:`, transcriptData?.[transcriptData?.length - 1]);
 
       fullTranscript = transcriptData
-        .map(segment => segment.text)
+        .map(segment => {
+          console.log(`🔍 Processing segment:`, segment);
+          return segment.text;
+        })
         .join(' ');
       
+      console.log(`🔍 Mapped transcript length:`, fullTranscript?.length || 0);
+      console.log(`🔍 Mapped transcript preview:`, fullTranscript?.substring(0, 200) || 'EMPTY');
+      
       transcriptionMethod = 'youtube';
-      console.log(`✅ YouTube transcript found for ${youtubeId}`);
+      console.log(`✅ YouTube subtitles found for ${youtubeId}`);
     } catch (youtubeError) {
-      console.log(`⚠️ YouTube transcript failed for ${youtubeId}, trying Whisper...`);
+      console.log(`⚠️ YouTube subtitles failed for ${youtubeId}, trying Whisper...`);
       
       try {
         // Fallback to Whisper API (paid but reliable)
@@ -71,11 +106,18 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({ 
+    console.log('🔙 Backend returning transcript. Length:', fullTranscript?.length || 'NO TRANSCRIPT');
+    console.log('🔙 Backend transcript preview:', fullTranscript?.substring(0, 100) || 'EMPTY');
+    
+    const responseData = { 
       transcript: fullTranscript,
       cached: false,
       method: transcriptionMethod
-    });
+    };
+    
+    console.log('🔙 Backend response data:', JSON.stringify(responseData, null, 2));
+    
+    return NextResponse.json(responseData);
   } catch (error) {
     console.error('Transcribe API error:', error);
     

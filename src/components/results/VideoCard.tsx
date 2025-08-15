@@ -22,7 +22,9 @@ interface VideoCardProps {
   onFavorite?: (videoId: string) => void;
   isFavorited?: boolean;
   onTranscribe?: (videoId: string) => void;
+  onViewTranscript?: (videoId: string, transcript: string) => void;
   onSummarize?: (videoId: string) => void;
+  isTranscribing?: boolean;
 }
 
 export default function VideoCard({
@@ -30,16 +32,31 @@ export default function VideoCard({
   onFavorite,
   isFavorited = false,
   onTranscribe,
+  onViewTranscript,
   onSummarize,
+  isTranscribing = false,
 }: VideoCardProps) {
+  console.log('🎥 VideoCard render for:', video.youtubeId);
+  console.log('📝 Has transcript:', !!video.transcript, video.transcript?.length || 0);
+  console.log('⏳ Is transcribing:', isTranscribing);
+  
   const [showSummary, setShowSummary] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleTranscribe = async () => {
+    console.log('🔥 handleTranscribe clicked for:', video.youtubeId);
     if (onTranscribe) {
-      setLoading(true);
       await onTranscribe(video.youtubeId);
-      setLoading(false);
+    }
+  };
+
+  const handleViewTranscript = () => {
+    console.log('👁️ handleViewTranscript clicked for:', video.youtubeId);
+    console.log('📄 Video transcript exists:', !!video.transcript);
+    if (onViewTranscript && video.transcript) {
+      onViewTranscript(video.youtubeId, video.transcript);
+    } else {
+      console.warn('⚠️ Cannot view transcript - missing callback or transcript');
     }
   };
 
@@ -125,18 +142,31 @@ export default function VideoCard({
           </div>
 
           <div className="flex gap-2">
-            {!video.transcript && (
+            {!video.transcript ? (
               <button
                 className="btn btn-sm btn-primary"
                 onClick={handleTranscribe}
-                disabled={loading}
+                disabled={isTranscribing}
               >
-                {loading ? (
-                  <span className="loading loading-spinner loading-xs"></span>
+                {isTranscribing ? (
+                  <>
+                    <span className="loading loading-spinner loading-xs mr-1"></span>
+                    Transcribing...
+                  </>
                 ) : (
-                  <BookOpen className="w-4 h-4 mr-1" />
+                  <>
+                    <BookOpen className="w-4 h-4 mr-1" />
+                    Transcribe
+                  </>
                 )}
-                Transcribe
+              </button>
+            ) : (
+              <button
+                className="btn btn-sm btn-success"
+                onClick={handleViewTranscript}
+              >
+                <BookOpen className="w-4 h-4 mr-1" />
+                View Transcript
               </button>
             )}
             

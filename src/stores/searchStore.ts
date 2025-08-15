@@ -15,11 +15,14 @@ export interface SearchResult {
   summary?: string;
 }
 
+export type ErrorType = 'unauthorized' | 'network' | 'general' | null;
+
 interface SearchStore {
   query: string;
   results: SearchResult[];
   loading: boolean;
   error: string | null;
+  errorType: ErrorType;
   filters: {
     duration?: 'short' | 'medium' | 'long';
     uploadDate?: 'today' | 'week' | 'month' | 'year';
@@ -30,10 +33,11 @@ interface SearchStore {
   setQuery: (query: string) => void;
   setResults: (results: SearchResult[]) => void;
   setLoading: (loading: boolean) => void;
-  setError: (error: string | null) => void;
+  setError: (error: string | null, errorType?: ErrorType) => void;
   setFilters: (filters: SearchStore['filters']) => void;
   addToHistory: (query: string) => void;
   clearHistory: () => void;
+  clearError: () => void;
 }
 
 export const useSearchStore = create<SearchStore>()(
@@ -43,13 +47,14 @@ export const useSearchStore = create<SearchStore>()(
       results: [],
       loading: false,
       error: null,
+      errorType: null,
       filters: {},
       searchHistory: [],
       
       setQuery: (query) => set({ query }),
       setResults: (results) => set({ results }),
       setLoading: (loading) => set({ loading }),
-      setError: (error) => set({ error }),
+      setError: (error, errorType = 'general') => set({ error, errorType }),
       setFilters: (filters) => set({ filters }),
       
       addToHistory: (query) =>
@@ -61,6 +66,7 @@ export const useSearchStore = create<SearchStore>()(
         })),
       
       clearHistory: () => set({ searchHistory: [] }),
+      clearError: () => set({ error: null, errorType: null }),
     }),
     {
       name: 'search-storage',
