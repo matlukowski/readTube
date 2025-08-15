@@ -3,6 +3,7 @@ import { auth } from '@clerk/nextjs/server';
 import { YoutubeTranscript } from 'youtube-transcript';
 import { transcribeRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
+import { getAIService } from '@/lib/ai';
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,15 +28,35 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Fetch transcript from YouTube
-    const transcriptData = await YoutubeTranscript.fetchTranscript(youtubeId, {
-      lang: language,
-    });
+    let fullTranscript: string;
+    let transcriptionMethod: 'youtube' | 'whisper';
 
-    // Combine transcript segments
-    const fullTranscript = transcriptData
-      .map(segment => segment.text)
-      .join(' ');
+    try {
+      // Try YouTube Transcript API first (free and fast)
+      const transcriptData = await YoutubeTranscript.fetchTranscript(youtubeId, {
+        lang: language,
+      });
+
+      fullTranscript = transcriptData
+        .map(segment => segment.text)
+        .join(' ');
+      
+      transcriptionMethod = 'youtube';
+      console.log(`✅ YouTube transcript found for ${youtubeId}`);
+    } catch (youtubeError) {
+      console.log(`⚠️ YouTube transcript failed for ${youtubeId}, trying Whisper...`);
+      
+      try {
+        // Fallback to Whisper API (paid but reliable)
+        const ai = getAIService();
+        fullTranscript = await ai.transcribeYouTubeVideo(youtubeId);
+        transcriptionMethod = 'whisper';
+        console.log(`✅ Whisper transcript generated for ${youtubeId}`);
+      } catch (whisperError) {
+        console.error('Both transcription methods failed:', { youtubeError, whisperError });
+        throw new Error('Transcript not available and audio transcription failed');
+      }
+    }
 
     // Save or update video with transcript
     await prisma.video.upsert({
@@ -52,7 +73,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ 
       transcript: fullTranscript,
-      cached: false 
+      cached: false,
+      method: transcriptionMethod
     });
   } catch (error) {
     console.error('Transcribe API error:', error);

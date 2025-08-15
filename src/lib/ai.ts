@@ -1,4 +1,8 @@
 import OpenAI from 'openai';
+import ytdl from 'ytdl-core';
+import fs from 'fs';
+import path from 'path';
+import { pipeline } from 'stream/promises';
 
 export interface SummarizationOptions {
   style: 'bullet-points' | 'paragraph' | 'key-insights';
@@ -24,7 +28,7 @@ export class AIService {
       const userPrompt = this.getUserPrompt(transcript, options);
 
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4-turbo-preview',
+        model: 'gpt-5-mini',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
@@ -43,7 +47,7 @@ export class AIService {
   async extractKeyTopics(transcript: string): Promise<string[]> {
     try {
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
+        model: 'gpt-5-mini',
         messages: [
           {
             role: 'system',
@@ -69,7 +73,7 @@ export class AIService {
   async generateQuestions(transcript: string): Promise<string[]> {
     try {
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
+        model: 'gpt-5-mini',
         messages: [
           {
             role: 'system',
@@ -89,6 +93,81 @@ export class AIService {
     } catch (error) {
       console.error('Question generation error:', error);
       return [];
+    }
+  }
+
+  async downloadYouTubeAudio(youtubeId: string): Promise<string> {
+    const tempDir = path.join(process.cwd(), 'temp');
+    const outputPath = path.join(tempDir, `${youtubeId}.mp3`);
+
+    // Create temp directory if it doesn't exist
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    // Check if file already exists
+    if (fs.existsSync(outputPath)) {
+      return outputPath;
+    }
+
+    try {
+      const videoUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
+      
+      // Get audio stream
+      const audioStream = ytdl(videoUrl, {
+        quality: 'lowestaudio',
+        filter: 'audioonly',
+      });
+
+      // Save to file
+      const writeStream = fs.createWriteStream(outputPath);
+      await pipeline(audioStream, writeStream);
+
+      return outputPath;
+    } catch (error) {
+      console.error('Audio download error:', error);
+      throw new Error('Failed to download audio from YouTube');
+    }
+  }
+
+  async transcribeWithWhisper(audioPath: string): Promise<string> {
+    try {
+      const transcription = await this.openai.audio.transcriptions.create({
+        file: fs.createReadStream(audioPath),
+        model: 'whisper-1',
+        response_format: 'text',
+      });
+
+      return transcription as string;
+    } catch (error) {
+      console.error('Whisper transcription error:', error);
+      throw new Error('Failed to transcribe audio with Whisper');
+    }
+  }
+
+  async transcribeYouTubeVideo(youtubeId: string): Promise<string> {
+    let audioPath: string | null = null;
+    
+    try {
+      // Download audio from YouTube
+      audioPath = await this.downloadYouTubeAudio(youtubeId);
+      
+      // Transcribe with Whisper
+      const transcript = await this.transcribeWithWhisper(audioPath);
+      
+      return transcript;
+    } catch (error) {
+      console.error('YouTube transcription error:', error);
+      throw error;
+    } finally {
+      // Cleanup temp file
+      if (audioPath && fs.existsSync(audioPath)) {
+        try {
+          fs.unlinkSync(audioPath);
+        } catch (cleanupError) {
+          console.error('Cleanup error:', cleanupError);
+        }
+      }
     }
   }
 
