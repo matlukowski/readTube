@@ -188,24 +188,31 @@ export class AIService {
   }
 
   private getSystemPrompt(style: SummarizationOptions['style']): string {
+    const baseInstructions = `
+      Napisz podsumowanie jako osobistą refleksję w pierwszej osobie, jakby to była Twoja własna opinia lub przemyślenia na dany temat.
+      WAŻNE: Zachowaj oryginalny styl wypowiedzi autora - jego ton, sposób mówienia, charakterystyczne zwroty, poziom formalności, używany słownik.
+      Nie pisz "Autor mówi..." ani "W filmie omawiane są...", tylko bezpośrednio przedstaw treść w pierwszej osobie.
+      Przykład: zamiast "Autor uważa, że zmiany klimatu..." napisz "Jeśli chodzi o zmiany klimatu, to...".
+    `;
+
     switch (style) {
       case 'bullet-points':
-        return `You are a helpful assistant that creates concise, well-structured summaries of video transcripts. 
-                Create a summary using bullet points. Each bullet point should capture a key idea or insight.
-                Use clear, simple language and maintain the original meaning.`;
+        return `${baseInstructions}
+                Stwórz podsumowanie używając listy punktów. Każdy punkt powinien przedstawić kluczową myśl lub spostrzeżenie.
+                Używaj jasnego języka i zachowaj oryginalny styl autora. Punkty mają brzmieć jak osobiste przemyślenia.`;
       
       case 'paragraph':
-        return `You are a helpful assistant that creates clear, comprehensive summaries of video transcripts.
-                Write a flowing paragraph summary that captures the main ideas and important details.
-                Use clear transitions between ideas and maintain a logical structure.`;
+        return `${baseInstructions}
+                Napisz płynne podsumowanie w formie paragrafu/paragrafów, które przedstawia główne idee i ważne szczegóły.
+                Używaj płynnych przejść między pomysłami i zachowaj logiczną strukturę. Całość ma brzmieć jak osobista refleksja na temat.`;
       
       case 'key-insights':
-        return `You are a helpful assistant that extracts the most valuable insights from video transcripts.
-                Focus on actionable takeaways, surprising facts, and important lessons.
-                Present each insight clearly with brief context.`;
+        return `${baseInstructions}
+                Skup się na najcenniejszych spostrzeżeniach - praktycznych wnioskach, zaskakujących faktach i ważnych lekcjach.
+                Przedstaw każde spostrzeżenie jako osobistą refleksję z krótkim kontekstem.`;
       
       default:
-        return 'Summarize the following video transcript clearly and concisely.';
+        return `${baseInstructions} Podsumuj treść jako osobistą refleksję w pierwszej osobie, zachowując styl autora.`;
     }
   }
 
@@ -214,11 +221,12 @@ export class AIService {
       ? transcript.substring(0, 10000) + '...' 
       : transcript;
 
-    return `Please summarize the following video transcript. 
-            Maximum length: ${options.maxLength} words.
-            Style: ${options.style}
+    return `Przeanalizuj poniższy transkrypt i napisz podsumowanie w pierwszej osobie, jakby to były Twoje własne przemyślenia na ten temat.
+            Maksymalna długość: ${options.maxLength} słów.
+            Styl: ${options.style}
+            Zachowaj oryginalny styl wypowiedzi, ton i charakterystyczne zwroty autora.
             
-            Transcript:
+            Transkrypt do przetworzenia:
             ${truncatedTranscript}`;
   }
 }

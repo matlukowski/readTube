@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import SearchBar from '@/components/search/SearchBar';
 import VideoCard from '@/components/results/VideoCard';
-import TranscriptionModal from '@/components/ui/TranscriptionModal';
+import SummaryModal from '@/components/ui/SummaryModal';
 import { useSearchStore } from '@/stores/searchStore';
 import { useFavoriteStore } from '@/stores/favoriteStore';
 import { Loader2, AlertCircle, LogIn, RefreshCw } from 'lucide-react';
@@ -18,17 +18,21 @@ export default function ResultsPage() {
   const { isFavorited } = useFavoriteStore();
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [totalResults, setTotalResults] = useState(0);
-  const [transcribingVideos, setTranscribingVideos] = useState<Set<string>>(new Set());
+  const [summarizingVideos, setSummarizingVideos] = useState<Set<string>>(new Set());
   const [modalState, setModalState] = useState<{
     isOpen: boolean;
     videoTitle: string;
     videoId: string;
-    transcript: string;
+    summaryData: any;
+    isLoading: boolean;
+    error: string | null;
   }>({
     isOpen: false,
     videoTitle: '',
     videoId: '',
-    transcript: ''
+    summaryData: null,
+    isLoading: false,
+    error: null
   });
 
   useEffect(() => {
@@ -81,113 +85,99 @@ export default function ResultsPage() {
     }
   };
 
-  const handleTranscribe = async (youtubeId: string) => {
-    console.log('🚀 handleTranscribe started for:', youtubeId);
+  const handleSummaryModal = async (youtubeId: string) => {
+    console.log('🧠 handleSummaryModal started for:', youtubeId);
     
+    const video = results.find(v => v.youtubeId === youtubeId);
+    if (!video) {
+      console.error('❌ Video not found in results for:', youtubeId);
+      return;
+    }
+
     // Start loading state
-    setTranscribingVideos(prev => new Set(prev).add(youtubeId));
+    setSummarizingVideos(prev => new Set(prev).add(youtubeId));
     
+    // Open modal immediately with loading state
+    setModalState({
+      isOpen: true,
+      videoTitle: video.title,
+      videoId: youtubeId,
+      summaryData: null,
+      isLoading: true,
+      error: null
+    });
+
     try {
-      const response = await fetch('/api/transcribe', {
+      // Step 1: Get transcript
+      console.log('📝 Step 1: Getting transcript...');
+      const transcribeResponse = await fetch('/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ youtubeId }),
       });
 
-      console.log('📡 Response status:', response.status, response.ok);
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('📥 Response data:', data);
-        console.log('📥 Full response JSON:', JSON.stringify(data, null, 2));
-        console.log('📝 Transcript exists:', 'transcript' in data);
-        console.log('📝 Transcript type:', typeof data.transcript);
-        console.log('📝 Transcript value:', data.transcript);
-        console.log('📝 Transcript length:', data.transcript?.length || 'NO TRANSCRIPT');
-        
-        // Update the video in results with transcript
-        const updatedResults = results.map(video => {
-          if (video.youtubeId === youtubeId) {
-            console.log('🔄 Updating video:', video.youtubeId, 'with transcript');
-            return { ...video, transcript: data.transcript };
-          }
-          return video;
-        });
-        
-        console.log('💾 Setting updated results:', updatedResults);
-        setResults(updatedResults);
-      } else {
-        // Handle API errors
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Transcription API error:', errorData);
-        
-        // You could show a toast notification here
-        alert(`Transcription failed: ${errorData.error || 'Unknown error'}`);
+      if (!transcribeResponse.ok) {
+        const errorData = await transcribeResponse.json().catch(() => ({ error: 'Transcription failed' }));
+        throw new Error(errorData.error || 'Failed to get transcript');
       }
+
+      const transcriptData = await transcribeResponse.json();
+      console.log('✅ Transcript obtained, length:', transcriptData.transcript?.length);
+
+      // Step 2: Generate summary
+      console.log('🧠 Step 2: Generating summary...');
+      const summarizeResponse = await fetch('/api/summarize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript: transcriptData.transcript,
+          youtubeId,
+          style: 'paragraph',
+          maxLength: 500,
+        }),
+      });
+
+      if (!summarizeResponse.ok) {
+        const errorData = await summarizeResponse.json().catch(() => ({ error: 'Summarization failed' }));
+        throw new Error(errorData.error || 'Failed to generate summary');
+      }
+
+      const summaryData = await summarizeResponse.json();
+      console.log('✅ Summary generated:', summaryData);
+
+      // Update modal with results
+      setModalState(prev => ({
+        ...prev,
+        summaryData,
+        isLoading: false,
+        error: null
+      }));
+
+      // Update video in results with transcript and summary
+      setResults(prev => prev.map(v => 
+        v.youtubeId === youtubeId 
+          ? { ...v, transcript: transcriptData.transcript, summary: summaryData.summary }
+          : v
+      ));
+
     } catch (error) {
-      console.error('Transcription failed:', error);
-      alert('Failed to connect to transcription service. Please try again.');
+      console.error('Summary modal failed:', error);
+      
+      // Update modal with error
+      setModalState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Wystąpił błąd podczas analizowania filmu'
+      }));
     } finally {
       // Clear loading state
-      setTranscribingVideos(prev => {
+      setSummarizingVideos(prev => {
         const newSet = new Set(prev);
         newSet.delete(youtubeId);
         return newSet;
       });
-      console.log('✅ handleTranscribe finished for:', youtubeId);
+      console.log('✅ handleSummaryModal finished for:', youtubeId);
     }
-  };
-
-  const handleSummarize = async (youtubeId: string) => {
-    const video = results.find(v => v.youtubeId === youtubeId);
-    if (!video?.transcript) return;
-
-    try {
-      const response = await fetch('/api/summarize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          transcript: video.transcript,
-          youtubeId,
-          style: 'paragraph',
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // Update the video in results with summary
-        setResults(
-          results.map(v =>
-            v.youtubeId === youtubeId
-              ? { ...v, summary: data.summary }
-              : v
-          )
-        );
-      }
-    } catch (error) {
-      console.error('Summarization failed:', error);
-    }
-  };
-
-  const handleViewTranscript = (videoId: string, transcript: string) => {
-    console.log('👁️ handleViewTranscript called for:', videoId);
-    console.log('📄 Transcript length:', transcript?.length || 'NO TRANSCRIPT');
-    
-    const video = results.find(v => v.youtubeId === videoId);
-    if (!video) {
-      console.error('❌ Video not found in results for:', videoId);
-      return;
-    }
-
-    console.log('🎬 Found video:', video.title);
-    console.log('🔓 Opening modal...');
-
-    setModalState({
-      isOpen: true,
-      videoTitle: video.title,
-      videoId,
-      transcript
-    });
   };
 
   const handleCloseModal = () => {
@@ -195,7 +185,9 @@ export default function ResultsPage() {
       isOpen: false,
       videoTitle: '',
       videoId: '',
-      transcript: ''
+      summaryData: null,
+      isLoading: false,
+      error: null
     });
   };
 
@@ -335,10 +327,8 @@ export default function ResultsPage() {
                   video={video}
                   isFavorited={isFavorited(video.youtubeId)}
                   onFavorite={handleFavorite}
-                  onTranscribe={handleTranscribe}
-                  onViewTranscript={handleViewTranscript}
-                  onSummarize={handleSummarize}
-                  isTranscribing={transcribingVideos.has(video.youtubeId)}
+                  onSummaryModal={handleSummaryModal}
+                  isSummarizing={summarizingVideos.has(video.youtubeId)}
                 />
               ))}
             </div>
@@ -379,13 +369,15 @@ export default function ResultsPage() {
         )}
       </main>
 
-      {/* Transcription Modal */}
-      <TranscriptionModal
+      {/* Summary Modal */}
+      <SummaryModal
         isOpen={modalState.isOpen}
         onClose={handleCloseModal}
         videoTitle={modalState.videoTitle}
         videoId={modalState.videoId}
-        transcript={modalState.transcript}
+        summaryData={modalState.summaryData}
+        isLoading={modalState.isLoading}
+        error={modalState.error}
       />
     </div>
   );

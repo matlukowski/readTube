@@ -21,50 +21,26 @@ interface VideoCardProps {
   };
   onFavorite?: (videoId: string) => void;
   isFavorited?: boolean;
-  onTranscribe?: (videoId: string) => void;
-  onViewTranscript?: (videoId: string, transcript: string) => void;
-  onSummarize?: (videoId: string) => void;
-  isTranscribing?: boolean;
+  onSummaryModal?: (videoId: string) => void;
+  isSummarizing?: boolean;
 }
 
 export default function VideoCard({
   video,
   onFavorite,
   isFavorited = false,
-  onTranscribe,
-  onViewTranscript,
-  onSummarize,
-  isTranscribing = false,
+  onSummaryModal,
+  isSummarizing = false,
 }: VideoCardProps) {
   console.log('🎥 VideoCard render for:', video.youtubeId);
-  console.log('📝 Has transcript:', !!video.transcript, video.transcript?.length || 0);
-  console.log('⏳ Is transcribing:', isTranscribing);
+  console.log('⏳ Is summarizing:', isSummarizing);
   
   const [showSummary, setShowSummary] = useState(false);
-  const [loading, setLoading] = useState(false);
 
-  const handleTranscribe = async () => {
-    console.log('🔥 handleTranscribe clicked for:', video.youtubeId);
-    if (onTranscribe) {
-      await onTranscribe(video.youtubeId);
-    }
-  };
-
-  const handleViewTranscript = () => {
-    console.log('👁️ handleViewTranscript clicked for:', video.youtubeId);
-    console.log('📄 Video transcript exists:', !!video.transcript);
-    if (onViewTranscript && video.transcript) {
-      onViewTranscript(video.youtubeId, video.transcript);
-    } else {
-      console.warn('⚠️ Cannot view transcript - missing callback or transcript');
-    }
-  };
-
-  const handleSummarize = async () => {
-    if (onSummarize) {
-      setLoading(true);
-      await onSummarize(video.youtubeId);
-      setLoading(false);
+  const handleSummaryModal = async () => {
+    console.log('🧠 handleSummaryModal clicked for:', video.youtubeId);
+    if (onSummaryModal) {
+      await onSummaryModal(video.youtubeId);
     }
   };
 
@@ -142,47 +118,23 @@ export default function VideoCard({
           </div>
 
           <div className="flex gap-2">
-            {!video.transcript ? (
-              <button
-                className="btn btn-sm btn-primary"
-                onClick={handleTranscribe}
-                disabled={isTranscribing}
-              >
-                {isTranscribing ? (
-                  <>
-                    <span className="loading loading-spinner loading-xs mr-1"></span>
-                    Transcribing...
-                  </>
-                ) : (
-                  <>
-                    <BookOpen className="w-4 h-4 mr-1" />
-                    Transcribe
-                  </>
-                )}
-              </button>
-            ) : (
-              <button
-                className="btn btn-sm btn-success"
-                onClick={handleViewTranscript}
-              >
-                <BookOpen className="w-4 h-4 mr-1" />
-                View Transcript
-              </button>
-            )}
-            
-            {video.transcript && !video.summary && (
-              <button
-                className="btn btn-sm btn-secondary"
-                onClick={handleSummarize}
-                disabled={loading}
-              >
-                {loading ? (
-                  <span className="loading loading-spinner loading-xs"></span>
-                ) : (
-                  'Summarize'
-                )}
-              </button>
-            )}
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={handleSummaryModal}
+              disabled={isSummarizing}
+            >
+              {isSummarizing ? (
+                <>
+                  <span className="loading loading-spinner loading-xs mr-1"></span>
+                  Analizuję...
+                </>
+              ) : (
+                <>
+                  <BookOpen className="w-4 h-4 mr-1" />
+                  O czym on mówi?
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>
