@@ -33,8 +33,8 @@ export class AIService {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        max_tokens: options.maxLength,
-        temperature: 0.7,
+        max_completion_tokens: 128000,
+        temperature: 1,
       });
 
       return response.choices[0]?.message?.content || 'Failed to generate summary';
@@ -58,8 +58,8 @@ export class AIService {
             content: `Extract key topics from this transcript: ${transcript.substring(0, 3000)}`,
           },
         ],
-        max_tokens: 200,
-        temperature: 0.5,
+        max_completion_tokens: 128000,
+        temperature: 1,
       });
 
       const content = response.choices[0]?.message?.content || '[]';
@@ -84,8 +84,8 @@ export class AIService {
             content: `Generate questions from this transcript: ${transcript.substring(0, 3000)}`,
           },
         ],
-        max_tokens: 300,
-        temperature: 0.8,
+        max_completion_tokens: 128000,
+        temperature: 1,
       });
 
       const content = response.choices[0]?.message?.content || '[]';
@@ -98,32 +98,48 @@ export class AIService {
 
   async downloadYouTubeAudio(youtubeId: string): Promise<string> {
     const tempDir = path.join(process.cwd(), 'temp');
-    const outputPath = path.join(tempDir, `${youtubeId}.mp3`);
-
+    
     // Create temp directory if it doesn't exist
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true });
     }
 
-    // Check if file already exists
-    if (fs.existsSync(outputPath)) {
-      return outputPath;
+    // Check for existing audio files (any format)
+    const existingFiles = fs.readdirSync(tempDir).filter((f: string) => f.startsWith(youtubeId));
+    if (existingFiles.length > 0) {
+      const existingPath = path.join(tempDir, existingFiles[0]);
+      console.log(`🔄 Using existing audio file: ${existingPath}`);
+      return existingPath;
     }
 
     try {
       const videoUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
+      console.log(`🎵 Downloading audio from: ${videoUrl}`);
       
-      // Get audio stream
-      const audioStream = ytdl(videoUrl, {
-        quality: 'lowestaudio',
-        filter: 'audioonly',
-      });
-
-      // Save to file
-      const writeStream = fs.createWriteStream(outputPath);
-      await pipeline(audioStream, writeStream);
-
-      return outputPath;
+      // Use yt-dlp to download audio in MP3 format
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Download audio in webm format (no conversion needed)
+      const command = `yt-dlp -f "bestaudio" -o "${tempDir}/%(id)s.%(ext)s" "${videoUrl}"`;
+      console.log(`🛠️ Running command: ${command}`);
+      
+      const { stdout, stderr } = await execAsync(command);
+      console.log(`📤 yt-dlp stdout:`, stdout);
+      if (stderr) console.log(`📤 yt-dlp stderr:`, stderr);
+      
+      // Find the downloaded audio file
+      const downloadedFiles = fs.readdirSync(tempDir).filter((f: string) => f.startsWith(youtubeId));
+      if (downloadedFiles.length === 0) {
+        throw new Error(`Audio file not created in ${tempDir}`);
+      }
+      
+      const audioPath = path.join(tempDir, downloadedFiles[0]);
+      const stats = fs.statSync(audioPath);
+      console.log(`✅ Audio downloaded successfully: ${audioPath}. Size: ${stats.size} bytes`);
+      
+      return audioPath;
     } catch (error) {
       console.error('Audio download error:', error);
       throw new Error('Failed to download audio from YouTube');
