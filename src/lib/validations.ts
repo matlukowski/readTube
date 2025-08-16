@@ -30,8 +30,9 @@ export const transcribeRequestSchema = z.object({
 
 export const summarizeRequestSchema = z.object({
   transcript: z.string().min(100, 'Transcript too short to summarize'),
-  maxLength: z.number().min(100).max(1000).default(500),
+  maxLength: z.number().min(500).max(5000).default(2500),
   style: z.enum(['bullet-points', 'paragraph', 'key-insights']).default('paragraph'),
+  language: z.enum(['pl', 'en']).default('pl'),
 });
 
 export const favoriteRequestSchema = z.object({

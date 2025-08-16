@@ -5,13 +5,17 @@ import ytdl from '@distube/ytdl-core';
 import { transcribeRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
 import { getAIService } from '@/lib/ai';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import fs from 'fs';
+import path from 'path';
 
-// Types for yt-dlp response
-interface YtDlpVideoInfo {
-  title?: string;
-  subtitles?: Record<string, Array<{ ext: string; url: string }>>;
-  automatic_captions?: Record<string, Array<{ ext: string; url: string }>>;
-}
+// Types for yt-dlp response (currently unused but kept for future use)
+// interface YtDlpVideoInfo {
+//   title?: string;
+//   subtitles?: Record<string, Array<{ ext: string; url: string }>>;
+//   automatic_captions?: Record<string, Array<{ ext: string; url: string }>>;
+// }
 
 // Function to remove duplicated text segments from subtitle content
 function removeDuplicatedSubtitleText(text: string): string {
@@ -70,14 +74,12 @@ async function extractSubtitlesWithYtDlp(youtubeId: string): Promise<string | nu
     const videoUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
     
     // Use direct CLI command to avoid path issues
-    const { exec } = require('child_process');
-    const { promisify } = require('util');
     const execAsync = promisify(exec);
     
     // First, try to download subtitles directly
-    const tempDir = require('path').join(process.cwd(), 'temp');
-    if (!require('fs').existsSync(tempDir)) {
-      require('fs').mkdirSync(tempDir, { recursive: true });
+    const tempDir = path.join(process.cwd(), 'temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
     }
     
     const command = `yt-dlp --write-auto-subs --sub-langs en --skip-download --sub-format vtt -o "${tempDir}\\%(title)s.%(ext)s" "${videoUrl}"`;
@@ -88,8 +90,6 @@ async function extractSubtitlesWithYtDlp(youtubeId: string): Promise<string | nu
     if (stderr) console.log(`📤 yt-dlp stderr:`, stderr);
     
     // Find the downloaded subtitle file
-    const fs = require('fs');
-    const path = require('path');
     const files = fs.readdirSync(tempDir).filter((f: string) => f.endsWith('.en.vtt'));
     
     if (files.length === 0) {
@@ -106,7 +106,7 @@ async function extractSubtitlesWithYtDlp(youtubeId: string): Promise<string | nu
     // Parse WebVTT format and remove duplicates
     const lines = subtitleContent.split('\n');
     const textLines = lines
-      .filter(line => 
+      .filter((line: string) => 
         !line.includes('-->') && 
         !line.startsWith('WEBVTT') && 
         !line.startsWith('NOTE') && 
@@ -114,8 +114,8 @@ async function extractSubtitlesWithYtDlp(youtubeId: string): Promise<string | nu
         !line.startsWith('Language:') &&
         line.trim()
       )
-      .map(line => line.replace(/<[^>]*>/g, '').trim()) // Clean HTML tags first
-      .filter(line => line.length > 0); // Remove empty lines
+      .map((line: string) => line.replace(/<[^>]*>/g, '').trim()) // Clean HTML tags first
+      .filter((line: string) => line.length > 0); // Remove empty lines
     
     // Remove consecutive duplicates and create clean text
     const uniqueLines = [];
@@ -209,8 +209,13 @@ async function extractSubtitlesDirectAPI(youtubeId: string): Promise<string | nu
     console.log(`📝 Found ${captions.length} caption tracks via direct API`);
     
     // Select the best caption track
-    let selectedCaption = captions.find((c: any) => c.kind === 'asr' && c.languageCode?.startsWith('en')) ||
-                         captions.find((c: any) => c.languageCode?.startsWith('en')) ||
+    const selectedCaption = captions.find((c: unknown) => {
+      const caption = c as { kind?: string; languageCode?: string };
+      return caption.kind === 'asr' && caption.languageCode?.startsWith('en');
+    }) || captions.find((c: unknown) => {
+      const caption = c as { languageCode?: string };
+      return caption.languageCode?.startsWith('en');
+    }) ||
                          captions[0];
     
     if (!selectedCaption) {
@@ -218,10 +223,11 @@ async function extractSubtitlesDirectAPI(youtubeId: string): Promise<string | nu
       return null;
     }
     
-    console.log(`✅ Selected caption: ${selectedCaption.name?.simpleText} (${selectedCaption.languageCode})`);
+    const selectedCaptionTyped = selectedCaption as { name?: { simpleText: string }; languageCode: string; baseUrl: string };
+    console.log(`✅ Selected caption: ${selectedCaptionTyped.name?.simpleText} (${selectedCaptionTyped.languageCode})`);
     
     // Fetch subtitle content with retry
-    const subtitleResponse = await retryWithBackoff(() => fetch(selectedCaption.baseUrl, {
+    const subtitleResponse = await retryWithBackoff(() => fetch(selectedCaptionTyped.baseUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         'Referer': `https://www.youtube.com/watch?v=${youtubeId}`
@@ -302,24 +308,30 @@ async function extractSubtitlesWithYtdl(youtubeId: string): Promise<string | nul
     }
     
     console.log(`📝 Found ${captions.length} caption tracks:`);
-    captions.forEach((caption: any, index: number) => {
-      console.log(`  ${index}: ${caption.name?.simpleText} (${caption.languageCode}) - kind: ${caption.kind || 'manual'}`);
+    captions.forEach((caption: unknown, index: number) => {
+      const c = caption as { name?: { simpleText: string }; languageCode: string; kind?: string };
+      console.log(`  ${index}: ${c.name?.simpleText} (${c.languageCode}) - kind: ${c.kind || 'manual'}`);
     });
     
     // Prioritize auto-generated subtitles, then manual ones
-    let selectedCaption = captions.find((c: any) => c.kind === 'asr') || // Auto-generated
-                         captions.find((c: any) => c.languageCode?.startsWith('en')) || // English
-                         captions[0]; // First available
+    const selectedCaption = captions.find((c: unknown) => {
+      const caption = c as { kind?: string };
+      return caption.kind === 'asr';
+    }) || captions.find((c: unknown) => {
+      const caption = c as { languageCode?: string };
+      return caption.languageCode?.startsWith('en');
+    }) || captions[0];
     
     if (!selectedCaption) {
       console.log(`❌ No suitable caption track found`);
       return null;
     }
     
-    console.log(`✅ Selected caption: ${selectedCaption.name?.simpleText} (${selectedCaption.languageCode}) - kind: ${selectedCaption.kind || 'manual'}`);
+    const selectedCap = selectedCaption as { name?: { simpleText: string }; languageCode: string; kind?: string; baseUrl: string };
+    console.log(`✅ Selected caption: ${selectedCap.name?.simpleText} (${selectedCap.languageCode}) - kind: ${selectedCap.kind || 'manual'}`);
     
     // Fetch the subtitle content
-    const subtitleUrl = selectedCaption.baseUrl;
+    const subtitleUrl = selectedCap.baseUrl;
     console.log(`🔗 Fetching subtitles from: ${subtitleUrl}`);
     
     const response = await retryWithBackoff(() => fetch(subtitleUrl, {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/layout/Header';
@@ -20,13 +20,7 @@ export default function FavoritesPage() {
     }
   }, [isLoaded, isSignedIn, router]);
 
-  useEffect(() => {
-    if (isSignedIn) {
-      fetchFavorites();
-    }
-  }, [isSignedIn]);
-
-  const fetchFavorites = async () => {
+  const fetchFavorites = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch('/api/favorites');
@@ -39,7 +33,13 @@ export default function FavoritesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [setFavorites, setLoading]);
+
+  useEffect(() => {
+    if (isSignedIn) {
+      fetchFavorites();
+    }
+  }, [isSignedIn, fetchFavorites]);
 
   const handleRemoveFavorite = async (videoId: string) => {
     try {

@@ -1,8 +1,8 @@
 import OpenAI from 'openai';
-import ytdl from 'ytdl-core';
 import fs from 'fs';
 import path from 'path';
-import { pipeline } from 'stream/promises';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
 export interface SummarizationOptions {
   style: 'bullet-points' | 'paragraph' | 'key-insights';
@@ -24,7 +24,7 @@ export class AIService {
     options: SummarizationOptions
   ): Promise<string> {
     try {
-      const systemPrompt = this.getSystemPrompt(options.style);
+      const systemPrompt = this.getSystemPrompt(options.style, options.language);
       const userPrompt = this.getUserPrompt(transcript, options);
 
       const response = await this.openai.chat.completions.create({
@@ -44,57 +44,7 @@ export class AIService {
     }
   }
 
-  async extractKeyTopics(transcript: string): Promise<string[]> {
-    try {
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'Extract 5-10 key topics or concepts from the transcript. Return as a JSON array of strings.',
-          },
-          {
-            role: 'user',
-            content: `Extract key topics from this transcript: ${transcript.substring(0, 3000)}`,
-          },
-        ],
-        max_completion_tokens: 128000,
-        temperature: 1,
-      });
-
-      const content = response.choices[0]?.message?.content || '[]';
-      return JSON.parse(content);
-    } catch (error) {
-      console.error('Topic extraction error:', error);
-      return [];
-    }
-  }
-
-  async generateQuestions(transcript: string): Promise<string[]> {
-    try {
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'Generate 3-5 thought-provoking questions based on the video content. Return as a JSON array of strings.',
-          },
-          {
-            role: 'user',
-            content: `Generate questions from this transcript: ${transcript.substring(0, 3000)}`,
-          },
-        ],
-        max_completion_tokens: 128000,
-        temperature: 1,
-      });
-
-      const content = response.choices[0]?.message?.content || '[]';
-      return JSON.parse(content);
-    } catch (error) {
-      console.error('Question generation error:', error);
-      return [];
-    }
-  }
+  // Removed extractKeyTopics and generateQuestions methods as they are no longer needed
 
   async downloadYouTubeAudio(youtubeId: string): Promise<string> {
     const tempDir = path.join(process.cwd(), 'temp');
@@ -117,8 +67,6 @@ export class AIService {
       console.log(`🎵 Downloading audio from: ${videoUrl}`);
       
       // Use yt-dlp to download audio in MP3 format
-      const { exec } = require('child_process');
-      const { promisify } = require('util');
       const execAsync = promisify(exec);
       
       // Download audio in webm format (no conversion needed)
@@ -187,47 +135,82 @@ export class AIService {
     }
   }
 
-  private getSystemPrompt(style: SummarizationOptions['style']): string {
-    const baseInstructions = `
-      Napisz podsumowanie jako osobistą refleksję w pierwszej osobie, jakby to była Twoja własna opinia lub przemyślenia na dany temat.
-      WAŻNE: Zachowaj oryginalny styl wypowiedzi autora - jego ton, sposób mówienia, charakterystyczne zwroty, poziom formalności, używany słownik.
-      Nie pisz "Autor mówi..." ani "W filmie omawiane są...", tylko bezpośrednio przedstaw treść w pierwszej osobie.
-      Przykład: zamiast "Autor uważa, że zmiany klimatu..." napisz "Jeśli chodzi o zmiany klimatu, to...".
+  private getSystemPrompt(style: SummarizationOptions['style'], language: string = 'pl'): string {
+    const baseInstructions = language === 'pl' ? `
+      Napisz BARDZO OBSZERNE I SZCZEGÓŁOWE podsumowanie jako osobistą refleksję w pierwszej osobie, jakby to były Twoje własne myśli.
+      KLUCZOWE ZASADY:
+      1. Zachowaj naturalny, konwersacyjny ton i poziom formalności z transkryptu
+      2. Używaj bezpośrednio pierwszej osoby - nie pisz "autor twierdzi" tylko "myślę że" / "uważam" / "moim zdaniem"
+      3. UWZGLĘDNIJ WSZYSTKIE KONKRETNE PRZYKŁADY, historie osobiste, anegdoty, liczby, fakty
+      4. Używaj podobnych wyrażeń i stylu komunikacji jak w oryginalnej treści
+      5. Przedstaw PEŁNY KONTEKST każdej rady czy spostrzeżenia
+      6. MINIMALNA DŁUGOŚĆ: 2000-3000 słów - to ma być wyczerpujące podsumowanie
+      7. Dziel na logiczne sekcje/akapity ale zachowaj płynność
+      8. Nie skracaj - im więcej szczegółów tym lepiej
+    ` : `
+      Write a VERY COMPREHENSIVE AND DETAILED summary as a personal reflection in first person, as if these were your own thoughts.
+      KEY PRINCIPLES:
+      1. Maintain the natural, conversational tone and formality level from the transcript
+      2. Use direct first person - don't write "the author claims" but "I think" / "I believe" / "in my opinion"
+      3. INCLUDE ALL SPECIFIC EXAMPLES, personal stories, anecdotes, numbers, facts
+      4. Use similar expressions and communication style as in the original content
+      5. Present FULL CONTEXT for each piece of advice or insight
+      6. MINIMUM LENGTH: 2000-3000 words - this should be a comprehensive summary
+      7. Break into logical sections/paragraphs but maintain flow
+      8. Don't shorten - the more details the better
     `;
 
     switch (style) {
       case 'bullet-points':
         return `${baseInstructions}
-                Stwórz podsumowanie używając listy punktów. Każdy punkt powinien przedstawić kluczową myśl lub spostrzeżenie.
-                Używaj jasnego języka i zachowaj oryginalny styl autora. Punkty mają brzmieć jak osobiste przemyślenia.`;
+                ${language === 'pl' ? 'Stwórz bardzo szczegółowe podsumowanie używając rozbudowanych punktów. Każdy punkt powinien zawierać konkretne przykłady, historie i pełny kontekst. Używaj osobistego tonu i utrzymuj naturalny styl komunikacji.' : 'Create a very detailed summary using comprehensive bullet points. Each point should contain specific examples, stories and full context. Use personal tone and maintain natural communication style.'}`;
       
       case 'paragraph':
         return `${baseInstructions}
-                Napisz płynne podsumowanie w formie paragrafu/paragrafów, które przedstawia główne idee i ważne szczegóły.
-                Używaj płynnych przejść między pomysłami i zachowaj logiczną strukturę. Całość ma brzmieć jak osobista refleksja na temat.`;
+                ${language === 'pl' ? 'Napisz bardzo obszerne, płynne podsumowanie w formie rozbudowanych paragrafów. Uwzględnij wszystkie ważne historie, przykłady, rady i szczegóły. Używaj płynnych przejść ale zachowaj wszystkie konkretne informacje. Ma to być jak osobista, szczegółowa refleksja.' : 'Write a very comprehensive, flowing summary in the form of extended paragraphs. Include all important stories, examples, advice and details. Use smooth transitions but keep all concrete information. This should be like a personal, detailed reflection.'}`;
       
       case 'key-insights':
         return `${baseInstructions}
-                Skup się na najcenniejszych spostrzeżeniach - praktycznych wnioskach, zaskakujących faktach i ważnych lekcjach.
-                Przedstaw każde spostrzeżenie jako osobistą refleksję z krótkim kontekstem.`;
+                ${language === 'pl' ? 'Skup się na najcenniejszych spostrzeżeniach ale przedstaw je BARDZO SZCZEGÓŁOWO z pełnym kontekstem, przykładami i historiami. Każde spostrzeżenie powinno być rozwinięte w kilka zdań z konkretnymi szczegółami.' : 'Focus on the most valuable insights but present them VERY THOROUGHLY with full context, examples and stories. Each insight should be expanded into several sentences with concrete details.'}`;
       
       default:
-        return `${baseInstructions} Podsumuj treść jako osobistą refleksję w pierwszej osobie, zachowując styl autora.`;
+        return `${baseInstructions} ${language === 'pl' ? 'Podsumuj treść jako bardzo obszerną osobistą refleksję w pierwszej osobie, utrzymując naturalny styl komunikacji i wszystkie szczegóły.' : 'Summarize the content as a very comprehensive personal reflection in first person, maintaining natural communication style and all details.'}`;
     }
   }
 
   private getUserPrompt(transcript: string, options: SummarizationOptions): string {
-    const truncatedTranscript = transcript.length > 10000 
-      ? transcript.substring(0, 10000) + '...' 
+    // Use much longer transcript for detailed summaries - up to 50k characters
+    const truncatedTranscript = transcript.length > 50000 
+      ? transcript.substring(0, 50000) + '...' 
       : transcript;
 
-    return `Przeanalizuj poniższy transkrypt i napisz podsumowanie w pierwszej osobie, jakby to były Twoje własne przemyślenia na ten temat.
-            Maksymalna długość: ${options.maxLength} słów.
-            Styl: ${options.style}
-            Zachowaj oryginalny styl wypowiedzi, ton i charakterystyczne zwroty autora.
-            
-            Transkrypt do przetworzenia:
-            ${truncatedTranscript}`;
+    const isPolish = options.language === 'pl';
+    
+    return isPolish ? 
+      `Przeanalizuj poniższy transkrypt i napisz BARDZO OBSZERNE podsumowanie w pierwszej osobie.
+      
+      WYMAGANIA:
+      - MINIMALNA długość: ${options.maxLength} słów (im więcej tym lepiej!)
+      - Styl: ${options.style}
+      - Zachowaj DOKŁADNIE oryginalny styl, zwroty i sposób mówienia autora
+      - Uwzględnij WSZYSTKIE przykłady, historie, liczby, fakty
+      - Nie skracaj - to ma być wyczerpujące podsumowanie
+      - Używaj pierwszej osoby jakby to były Twoje myśli
+      
+      Transkrypt do przetworzenia:
+      ${truncatedTranscript}` :
+      `Analyze the following transcript and write a VERY COMPREHENSIVE summary in first person.
+      
+      REQUIREMENTS:
+      - MINIMUM length: ${options.maxLength} words (the more the better!)
+      - Style: ${options.style}
+      - Preserve EXACTLY the original style, phrases and way of speaking
+      - Include ALL examples, stories, numbers, facts
+      - Don't shorten - this should be a comprehensive summary
+      - Use first person as if these were your thoughts
+      
+      Transcript to process:
+      ${truncatedTranscript}`;
   }
 }
 

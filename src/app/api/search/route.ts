@@ -33,17 +33,28 @@ export async function POST(request: NextRequest) {
       youtube.mapToVideoData(item)
     );
 
-    // Save search to database
+    // Save search to database (convert SearchResult back to VideoData for Prisma)
     const user = await prisma.user.findUnique({
       where: { clerkId: userId },
     });
 
     if (user) {
+      const prismaResults = formattedResults.map(result => ({
+        youtubeId: result.youtubeId,
+        title: result.title,
+        channelName: result.channelName,
+        thumbnail: result.thumbnail,
+        duration: result.duration,
+        viewCount: result.viewCount,
+        publishedAt: result.publishedAt,
+        description: result.description,
+      }));
+      
       await prisma.search.create({
         data: {
           userId: user.id,
           query: validatedData.query,
-          results: formattedResults,
+          results: prismaResults,
         },
       });
     }

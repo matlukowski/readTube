@@ -8,7 +8,6 @@ interface TranscriptionModalProps {
   isOpen: boolean;
   onClose: () => void;
   videoTitle: string;
-  videoId: string;
   transcript: string;
   isLoading?: boolean;
   error?: string;
@@ -18,7 +17,6 @@ export default function TranscriptionModal({
   isOpen,
   onClose,
   videoTitle,
-  videoId,
   transcript,
   isLoading = false,
   error
@@ -214,7 +212,7 @@ export default function TranscriptionModal({
             <FileText className="w-16 h-16 text-base-content/30 mb-4" />
             <p className="text-lg font-medium">No transcript available</p>
             <p className="text-sm text-base-content/60">
-              Click "Transcribe" to generate a transcript for this video
+              Click &quot;Transcribe&quot; to generate a transcript for this video
             </p>
           </div>
         )}

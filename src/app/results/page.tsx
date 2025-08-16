@@ -1,24 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import SearchBar from '@/components/search/SearchBar';
 import VideoCard from '@/components/results/VideoCard';
 import SummaryModal from '@/components/ui/SummaryModal';
-import { useSearchStore } from '@/stores/searchStore';
+import { useSearchStore, SearchResult } from '@/stores/searchStore';
 import { useFavoriteStore } from '@/stores/favoriteStore';
 import { Loader2, AlertCircle, LogIn, RefreshCw } from 'lucide-react';
 
-export default function ResultsPage() {
+function ResultsPageContent() {
   const searchParams = useSearchParams();
   const query = searchParams.get('q') || '';
   const router = useRouter();
-  const { setQuery, setResults, setLoading, setError, clearError, loading, results: storeResults, error, errorType } = useSearchStore();
+  const { setResults, setLoading, setError, clearError, loading, results: storeResults, error, errorType, getCachedSearch, setCachedSearch } = useSearchStore();
   const { isFavorited } = useFavoriteStore();
   
   // Ensure results is always an array to prevent .map() errors
-  const results = Array.isArray(storeResults) ? storeResults : [];
+  const results = useMemo(() => Array.isArray(storeResults) ? storeResults : [], [storeResults]);
   
   // Log any state issues for debugging
   if (!Array.isArray(storeResults)) {
@@ -31,7 +31,7 @@ export default function ResultsPage() {
     isOpen: boolean;
     videoTitle: string;
     videoId: string;
-    summaryData: any;
+    summaryData: { summary: string; generatedAt: string; cached?: boolean } | null;
     isLoading: boolean;
     error: string | null;
   }>({
@@ -43,14 +43,19 @@ export default function ResultsPage() {
     error: null
   });
 
-  useEffect(() => {
-    if (query) {
-      setQuery(query);
-      performSearch(query);
+  const performSearch = useCallback(async (searchQuery: string, pageToken?: string) => {
+    // Check cache first (only for initial search, not pagination)
+    if (!pageToken) {
+      const cachedResult = getCachedSearch(searchQuery);
+      if (cachedResult) {
+        console.log('🎯 Using cached search results for:', searchQuery);
+        setResults(cachedResult.results);
+        setNextPageToken(cachedResult.nextPageToken || null);
+        setTotalResults(cachedResult.totalResults);
+        return;
+      }
     }
-  }, [query]);
-
-  const performSearch = async (searchQuery: string, pageToken?: string) => {
+    
     setLoading(true);
     setError(null); // Clear previous errors
     
@@ -67,9 +72,17 @@ export default function ResultsPage() {
       if (response.ok) {
         const data = await response.json();
         if (pageToken) {
-          setResults([...results, ...data.results]);
+          // For pagination, append to existing results
+          const newResults = [...results, ...(data.results as SearchResult[])];
+          setResults(newResults);
         } else {
-          setResults(data.results);
+          setResults(data.results as SearchResult[]);
+          // Cache the search results (only initial search, not pagination)
+          setCachedSearch(searchQuery, {
+            results: data.results as SearchResult[],
+            nextPageToken: data.nextPageToken,
+            totalResults: data.totalResults
+          });
         }
         setNextPageToken(data.nextPageToken);
         setTotalResults(data.totalResults);
@@ -91,7 +104,13 @@ export default function ResultsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [results, setLoading, setError, setResults, getCachedSearch, setCachedSearch]);
+
+  useEffect(() => {
+    if (query) {
+      performSearch(query);
+    }
+  }, [query, performSearch]); // Removed redundant setQuery call
 
   const handleSummaryModal = async (youtubeId: string) => {
     console.log('🧠 handleSummaryModal started for:', youtubeId);
@@ -134,6 +153,7 @@ export default function ResultsPage() {
 
       // Step 2: Generate summary
       console.log('🧠 Step 2: Generating summary...');
+      const selectedLanguage = localStorage.getItem('language') || 'pl';
       const summarizeResponse = await fetch('/api/summarize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -141,7 +161,8 @@ export default function ResultsPage() {
           transcript: transcriptData.transcript,
           youtubeId,
           style: 'paragraph',
-          maxLength: 500,
+          maxLength: 2500,
+          language: selectedLanguage,
         }),
       });
 
@@ -162,11 +183,12 @@ export default function ResultsPage() {
       }));
 
       // Update video in results with transcript and summary
-      setResults(prev => prev.map(v => 
-        v.youtubeId === youtubeId 
-          ? { ...v, transcript: transcriptData.transcript, summary: summaryData.summary }
-          : v
-      ));
+      const updatedResults = results.map(video => 
+        video.youtubeId === youtubeId 
+          ? { ...video, transcript: transcriptData.transcript, summary: summaryData.summary }
+          : video
+      );
+      setResults(updatedResults);
 
     } catch (error) {
       console.error('Summary modal failed:', error);
@@ -305,7 +327,7 @@ export default function ResultsPage() {
         {query && (
           <div className="mb-4">
             <h2 className="text-2xl font-semibold">
-              Results for "{query}"
+              Results for &quot;{query}&quot;
               {totalResults > 0 && (
                 <span className="text-base-content/60 text-lg ml-2">
                   ({totalResults} videos)
@@ -365,7 +387,7 @@ export default function ResultsPage() {
         {/* No Results (only when no error) */}
         {!error && !loading && results.length === 0 && query && (
           <div className="alert alert-info">
-            <span>No results found for "{query}". Try different keywords!</span>
+            <span>No results found for &quot;{query}&quot;. Try different keywords!</span>
           </div>
         )}
 
@@ -382,11 +404,22 @@ export default function ResultsPage() {
         isOpen={modalState.isOpen}
         onClose={handleCloseModal}
         videoTitle={modalState.videoTitle}
-        videoId={modalState.videoId}
         summaryData={modalState.summaryData}
         isLoading={modalState.isLoading}
-        error={modalState.error}
+        error={modalState.error || undefined}
       />
     </div>
+  );
+}
+
+export default function ResultsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-base-200 flex items-center justify-center">
+        <span className="loading loading-spinner loading-lg"></span>
+      </div>
+    }>
+      <ResultsPageContent />
+    </Suspense>
   );
 }

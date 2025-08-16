@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { transcript, maxLength, style } = summarizeRequestSchema.parse(body);
+    const { transcript, maxLength, style, language } = summarizeRequestSchema.parse(body);
     const { youtubeId } = body; // Optional, for caching
 
     // Check if summary already exists
@@ -35,18 +35,11 @@ export async function POST(request: NextRequest) {
     const summary = await ai.summarizeTranscript(transcript, {
       style,
       maxLength,
+      language: language || 'pl',
     });
-
-    // Extract additional insights
-    const [topics, questions] = await Promise.all([
-      ai.extractKeyTopics(transcript),
-      ai.generateQuestions(transcript),
-    ]);
 
     const enrichedSummary = {
       summary,
-      topics,
-      questions,
       generatedAt: new Date().toISOString(),
     };
 

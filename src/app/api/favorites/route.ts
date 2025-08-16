@@ -3,7 +3,7 @@ import { auth } from '@clerk/nextjs/server';
 import { favoriteRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const { userId } = await auth();
     if (!userId) {
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ favorites: [] });
     }
 
-    const favorites = user.favorites.map((fav: any) => ({
+    const favorites = user.favorites.map((fav) => ({
       id: fav.id,
       videoId: fav.videoId,
       video: fav.video,

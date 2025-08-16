@@ -1,12 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { X, Copy, Download, Clock, FileText, CheckCircle, AlertCircle, Brain, MessageSquare, Lightbulb } from 'lucide-react';
+import { useState } from 'react';
+import { X, Copy, Download, Clock, FileText, CheckCircle, AlertCircle, Brain } from 'lucide-react';
 
 interface SummaryData {
   summary: string;
-  topics: string[];
-  questions: string[];
   generatedAt: string;
   cached?: boolean;
 }
@@ -15,7 +13,6 @@ interface SummaryModalProps {
   isOpen: boolean;
   onClose: () => void;
   videoTitle: string;
-  videoId: string;
   summaryData: SummaryData | null;
   isLoading?: boolean;
   error?: string;
@@ -25,19 +22,18 @@ export default function SummaryModal({
   isOpen,
   onClose,
   videoTitle,
-  videoId,
   summaryData,
   isLoading = false,
   error
 }: SummaryModalProps) {
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<'summary' | 'topics' | 'questions'>('summary');
+  // Removed activeTab state - only showing summary now
 
   // Handle copy to clipboard
   const handleCopy = async () => {
     if (summaryData?.summary) {
       try {
-        const content = `${videoTitle}\n\n${summaryData.summary}\n\nKey Topics:\n${summaryData.topics.map(topic => `• ${topic}`).join('\n')}\n\nQuestions:\n${summaryData.questions.map(q => `• ${q}`).join('\n')}`;
+        const content = `${videoTitle}\n\n${summaryData.summary}`;
         await navigator.clipboard.writeText(content);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -50,7 +46,7 @@ export default function SummaryModal({
   // Handle download as text file
   const handleDownload = () => {
     if (summaryData) {
-      const content = `${videoTitle}\n${'='.repeat(videoTitle.length)}\n\nPodsumowanie:\n${summaryData.summary}\n\nKluczowe tematy:\n${summaryData.topics.map(topic => `• ${topic}`).join('\n')}\n\nPytania do przemyślenia:\n${summaryData.questions.map(q => `• ${q}`).join('\n')}\n\nWygenerowano: ${new Date(summaryData.generatedAt).toLocaleString('pl-PL')}`;
+      const content = `${videoTitle}\n${'='.repeat(videoTitle.length)}\n\nPodsumowanie:\n${summaryData.summary}\n\nWygenerowano: ${new Date(summaryData.generatedAt).toLocaleString('pl-PL')}`;
       
       const blob = new Blob([content], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
@@ -155,80 +151,19 @@ export default function SummaryModal({
               </div>
             </div>
 
-            {/* Tabs */}
-            <div className="tabs tabs-boxed mb-4">
-              <button 
-                className={`tab ${activeTab === 'summary' ? 'tab-active' : ''}`}
-                onClick={() => setActiveTab('summary')}
-              >
-                <FileText className="w-4 h-4 mr-1" />
-                Podsumowanie
-              </button>
-              <button 
-                className={`tab ${activeTab === 'topics' ? 'tab-active' : ''}`}
-                onClick={() => setActiveTab('topics')}
-              >
-                <Lightbulb className="w-4 h-4 mr-1" />
-                Tematy ({summaryData.topics.length})
-              </button>
-              <button 
-                className={`tab ${activeTab === 'questions' ? 'tab-active' : ''}`}
-                onClick={() => setActiveTab('questions')}
-              >
-                <MessageSquare className="w-4 h-4 mr-1" />
-                Pytania ({summaryData.questions.length})
-              </button>
+            {/* Header for Summary Section */}
+            <div className="flex items-center gap-2 mb-4">
+              <FileText className="w-5 h-5 text-primary" />
+              <h4 className="text-lg font-semibold">Podsumowanie</h4>
             </div>
 
-            {/* Content */}
+            {/* Summary Content */}
             <div className="h-96 overflow-y-auto border rounded-lg p-6 bg-base-100">
-              {activeTab === 'summary' && (
-                <div className="prose prose-sm max-w-none">
-                  <div className="leading-relaxed whitespace-pre-wrap">
-                    {summaryData.summary}
-                  </div>
+              <div className="prose prose-sm max-w-none">
+                <div className="leading-relaxed whitespace-pre-wrap text-sm">
+                  {summaryData.summary}
                 </div>
-              )}
-
-              {activeTab === 'topics' && (
-                <div className="space-y-3">
-                  {summaryData.topics.map((topic, index) => (
-                    <div key={index} className="flex items-start gap-3">
-                      <div className="badge badge-primary badge-sm mt-1 flex-shrink-0">
-                        {index + 1}
-                      </div>
-                      <div className="text-sm leading-relaxed">
-                        {topic}
-                      </div>
-                    </div>
-                  ))}
-                  {summaryData.topics.length === 0 && (
-                    <div className="text-center text-base-content/60">
-                      Brak zidentyfikowanych tematów
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {activeTab === 'questions' && (
-                <div className="space-y-4">
-                  {summaryData.questions.map((question, index) => (
-                    <div key={index} className="flex items-start gap-3">
-                      <div className="badge badge-secondary badge-sm mt-1 flex-shrink-0">
-                        {index + 1}
-                      </div>
-                      <div className="text-sm leading-relaxed">
-                        {question}
-                      </div>
-                    </div>
-                  ))}
-                  {summaryData.questions.length === 0 && (
-                    <div className="text-center text-base-content/60">
-                      Brak wygenerowanych pytań
-                    </div>
-                  )}
-                </div>
-              )}
+              </div>
             </div>
           </>
         )}
@@ -239,7 +174,7 @@ export default function SummaryModal({
             <Brain className="w-16 h-16 text-base-content/30 mb-4" />
             <p className="text-lg font-medium">Brak podsumowania</p>
             <p className="text-sm text-base-content/60">
-              Kliknij "O czym on mówi?" żeby wygenerować podsumowanie
+              Kliknij &quot;O czym on mówi?&quot; żeby wygenerować podsumowanie
             </p>
           </div>
         )}

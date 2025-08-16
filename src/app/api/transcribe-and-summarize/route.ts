@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { YoutubeTranscript } from 'youtube-transcript';
-import ytdl from '@distube/ytdl-core';
 import { transcribeRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
 import { getAIService } from '@/lib/ai';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import fs from 'fs';
+import path from 'path';
 
 // Reuse the same functions from transcribe/route.ts
 async function retryWithBackoff<T>(
@@ -37,13 +40,11 @@ async function extractSubtitlesWithYtDlp(youtubeId: string): Promise<string | nu
     console.log(`🔍 Trying yt-dlp subtitle extraction for ${youtubeId}...`);
     const videoUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
     
-    const { exec } = require('child_process');
-    const { promisify } = require('util');
     const execAsync = promisify(exec);
     
-    const tempDir = require('path').join(process.cwd(), 'temp');
-    if (!require('fs').existsSync(tempDir)) {
-      require('fs').mkdirSync(tempDir, { recursive: true });
+    const tempDir = path.join(process.cwd(), 'temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
     }
     
     const command = `yt-dlp --write-auto-subs --sub-langs en --skip-download --sub-format vtt -o "${tempDir}\\\\%(title)s.%(ext)s" "${videoUrl}"`;
@@ -53,8 +54,6 @@ async function extractSubtitlesWithYtDlp(youtubeId: string): Promise<string | nu
     console.log(`📤 yt-dlp stdout:`, stdout);
     if (stderr) console.log(`📤 yt-dlp stderr:`, stderr);
     
-    const fs = require('fs');
-    const path = require('path');
     const files = fs.readdirSync(tempDir).filter((f: string) => f.endsWith('.en.vtt'));
     
     if (files.length === 0) {
@@ -71,7 +70,7 @@ async function extractSubtitlesWithYtDlp(youtubeId: string): Promise<string | nu
     // Parse WebVTT format
     const lines = subtitleContent.split('\\n');
     const subtitleText = lines
-      .filter(line => 
+      .filter((line: string) => 
         !line.includes('-->') && 
         !line.startsWith('WEBVTT') && 
         !line.startsWith('NOTE') && 
@@ -150,9 +149,13 @@ async function extractSubtitlesDirectAPI(youtubeId: string): Promise<string | nu
     
     console.log(`📝 Found ${captions.length} caption tracks via direct API`);
     
-    let selectedCaption = captions.find((c: any) => c.kind === 'asr' && c.languageCode?.startsWith('en')) ||
-                         captions.find((c: any) => c.languageCode?.startsWith('en')) ||
-                         captions[0];
+    const selectedCaption = captions.find((c: unknown) => {
+      const caption = c as { kind?: string; languageCode?: string };
+      return caption.kind === 'asr' && caption.languageCode?.startsWith('en');
+    }) || captions.find((c: unknown) => {
+      const caption = c as { languageCode?: string };
+      return caption.languageCode?.startsWith('en');
+    }) || captions[0];
     
     if (!selectedCaption) {
       console.log(`❌ No suitable caption track found`);
@@ -174,7 +177,7 @@ async function extractSubtitlesDirectAPI(youtubeId: string): Promise<string | nu
     
     const xmlContent = await subtitleResponse.text();
     
-    const textMatches = xmlContent.match(/<text[^>]*>(.*?)<\\/text>/g);
+    const textMatches = xmlContent.match(/<text[^>]*>(.*?)<\/text>/g);
     if (!textMatches) {
       console.log(`❌ No text content found in subtitle XML`);
       return null;
@@ -272,7 +275,7 @@ export async function POST(request: NextRequest) {
                 console.log(`✅ Successfully fetched subtitles with language: ${lang}`);
                 break;
               }
-            } catch (langError) {
+            } catch {
               continue;
             }
           }
@@ -300,19 +303,12 @@ export async function POST(request: NextRequest) {
     const ai = getAIService();
     const summary = await ai.summarizeTranscript(fullTranscript, {
       style: 'paragraph',
-      maxLength: 500,
+      maxLength: 2500,
+      language: 'pl',
     });
-
-    // Extract additional insights
-    const [topics, questions] = await Promise.all([
-      ai.extractKeyTopics(fullTranscript),
-      ai.generateQuestions(fullTranscript),
-    ]);
 
     const enrichedSummary = {
       summary,
-      topics,
-      questions,
       generatedAt: new Date().toISOString(),
     };
 

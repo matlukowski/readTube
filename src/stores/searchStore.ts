@@ -17,6 +17,14 @@ export interface SearchResult {
 
 export type ErrorType = 'unauthorized' | 'network' | 'general' | null;
 
+interface CachedSearch {
+  query: string;
+  results: SearchResult[];
+  timestamp: number;
+  nextPageToken?: string;
+  totalResults: number;
+}
+
 interface SearchStore {
   query: string;
   results: SearchResult[];
@@ -29,6 +37,7 @@ interface SearchStore {
     sortBy?: 'relevance' | 'date' | 'viewCount';
   };
   searchHistory: string[];
+  searchCache: Map<string, CachedSearch>;
   
   setQuery: (query: string) => void;
   setResults: (results: SearchResult[]) => void;
@@ -38,11 +47,16 @@ interface SearchStore {
   addToHistory: (query: string) => void;
   clearHistory: () => void;
   clearError: () => void;
+  getCachedSearch: (query: string) => CachedSearch | null;
+  setCachedSearch: (query: string, data: Omit<CachedSearch, 'query' | 'timestamp'>) => void;
+  clearExpiredCache: () => void;
 }
+
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
 
 export const useSearchStore = create<SearchStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       query: '',
       results: [],
       loading: false,
@@ -50,6 +64,7 @@ export const useSearchStore = create<SearchStore>()(
       errorType: null,
       filters: {},
       searchHistory: [],
+      searchCache: new Map<string, CachedSearch>(),
       
       setQuery: (query) => set({ query }),
       setResults: (results) => {
@@ -74,6 +89,50 @@ export const useSearchStore = create<SearchStore>()(
       
       clearHistory: () => set({ searchHistory: [] }),
       clearError: () => set({ error: null, errorType: null }),
+      
+      getCachedSearch: (query: string) => {
+        const state = get();
+        const cached = state.searchCache.get(query.toLowerCase());
+        
+        if (!cached) return null;
+        
+        // Check if cache is expired (5 minutes TTL)
+        const isExpired = Date.now() - cached.timestamp > CACHE_TTL;
+        if (isExpired) {
+          // Remove expired cache
+          const newCache = new Map(state.searchCache);
+          newCache.delete(query.toLowerCase());
+          set({ searchCache: newCache });
+          return null;
+        }
+        
+        return cached;
+      },
+      
+      setCachedSearch: (query: string, data) => {
+        const state = get();
+        const newCache = new Map(state.searchCache);
+        newCache.set(query.toLowerCase(), {
+          query,
+          timestamp: Date.now(),
+          ...data
+        });
+        set({ searchCache: newCache });
+      },
+      
+      clearExpiredCache: () => {
+        const state = get();
+        const newCache = new Map<string, CachedSearch>();
+        const now = Date.now();
+        
+        state.searchCache.forEach((cached, key) => {
+          if (now - cached.timestamp <= CACHE_TTL) {
+            newCache.set(key, cached);
+          }
+        });
+        
+        set({ searchCache: newCache });
+      }
     }),
     {
       name: 'search-storage',

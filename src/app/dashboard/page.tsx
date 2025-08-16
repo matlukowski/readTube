@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/layout/Header';
@@ -14,7 +14,6 @@ export default function DashboardPage() {
   const router = useRouter();
   const { searchHistory } = useSearchStore();
   const { favorites, setFavorites, setLoading: setFavoritesLoading } = useFavoriteStore();
-  const [recentSearches, setRecentSearches] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalSearches: 0,
     totalFavorites: 0,
@@ -28,19 +27,12 @@ export default function DashboardPage() {
     }
   }, [isLoaded, isSignedIn, router]);
 
-  useEffect(() => {
-    if (isSignedIn) {
-      fetchDashboardData();
-    }
-  }, [isSignedIn]);
-
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     try {
       // Fetch user's recent searches
       const searchResponse = await fetch('/api/user/searches');
       if (searchResponse.ok) {
         const searchData = await searchResponse.json();
-        setRecentSearches(searchData.searches || []);
         setStats(prev => ({ ...prev, totalSearches: searchData.total || 0 }));
       }
 
@@ -57,7 +49,13 @@ export default function DashboardPage() {
     } finally {
       setFavoritesLoading(false);
     }
-  };
+  }, [setFavorites, setFavoritesLoading]);
+
+  useEffect(() => {
+    if (isSignedIn) {
+      fetchDashboardData();
+    }
+  }, [isSignedIn, fetchDashboardData]);
 
   if (!isLoaded) {
     return (
