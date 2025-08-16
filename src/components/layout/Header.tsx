@@ -44,9 +44,10 @@ export default function Header() {
       
       <div className="navbar-center hidden lg:flex">
         <ul className="menu menu-horizontal px-1">
-          <li><Link href="/search">Search</Link></li>
+          <li><Link href="/analyze">Analizuj</Link></li>
           {isSignedIn && (
             <>
+              <li><Link href="/library">Biblioteka</Link></li>
               <li><Link href="/dashboard">Dashboard</Link></li>
               <li><Link href="/favorites">Favorites</Link></li>
             </>

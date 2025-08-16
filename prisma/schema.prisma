@@ -21,6 +21,7 @@ model User {
   
   searches  Search[]
   favorites Favorite[]
+  videos    Video[]  // User's library videos
   
   @@map("users")
 }
@@ -40,15 +41,20 @@ model Search {
 model Video {
   id           String   @id @default(cuid())
   youtubeId    String   @unique
+  userId       String?  // Optional - for library videos
   title        String
   channelName  String
   duration     String?
+  viewCount    String?
+  publishedAt  DateTime?
+  description  String?  @db.Text
   thumbnail    String
   transcript   String?  @db.Text // Raw transcript
   summary      String?  @db.Text // AI-processed summary
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   
+  user         User?    @relation(fields: [userId], references: [clerkId], onDelete: Cascade)
   favorites    Favorite[]
   
   @@map("videos")

@@ -2,7 +2,7 @@
 
 import { useUser } from '@clerk/nextjs';
 import Link from 'next/link';
-import SearchBar from '@/components/search/SearchBar';
+import AnalyzeBar from '@/components/analyze/AnalyzeBar';
 import Header from '@/components/layout/Header';
 import { Play, Brain, Sparkles, Users } from 'lucide-react';
 
@@ -17,14 +17,14 @@ export default function HomePage() {
         {/* Hero Section */}
         <div className="text-center mb-12">
           <h1 className="text-5xl font-bold mb-4">
-            Extract Knowledge from YouTube
+            Analizuj filmy YouTube z AI
           </h1>
           <p className="text-xl text-base-content/70 mb-8">
-            Search, transcribe, and get AI-powered summaries of any YouTube video
+            Wklej link do filmu YouTube i otrzymaj szczegółowe podsumowanie AI
           </p>
           
           <div className="max-w-2xl mx-auto">
-            <SearchBar />
+            <AnalyzeBar />
           </div>
           
           {!isSignedIn && (
@@ -41,9 +41,9 @@ export default function HomePage() {
           <div className="card bg-base-100 shadow-xl">
             <div className="card-body">
               <Play className="w-12 h-12 text-primary mb-4" />
-              <h3 className="card-title">Smart Search</h3>
+              <h3 className="card-title">Analiza URL</h3>
               <p className="text-base-content/70">
-                Search YouTube videos with advanced filters for duration, date, and relevance
+                Wklej link do filmu YouTube i natychmiast otrzymaj szczegółową analizę
               </p>
             </div>
           </div>
@@ -71,9 +71,9 @@ export default function HomePage() {
           <div className="card bg-base-100 shadow-xl">
             <div className="card-body">
               <Users className="w-12 h-12 text-info mb-4" />
-              <h3 className="card-title">Personal Library</h3>
+              <h3 className="card-title">Biblioteka wiedzy</h3>
               <p className="text-base-content/70">
-                Save your favorite videos and build your knowledge library
+                Automatycznie zapisuj analizy i buduj swoją osobistą bibliotekę wiedzy
               </p>
             </div>
           </div>
@@ -81,41 +81,41 @@ export default function HomePage() {
 
         {/* How It Works */}
         <div className="mt-20">
-          <h2 className="text-3xl font-bold text-center mb-12">How It Works</h2>
+          <h2 className="text-3xl font-bold text-center mb-12">Jak to działa</h2>
           
           <div className="steps steps-vertical lg:steps-horizontal w-full">
             <div className="step step-primary">
               <div className="text-center mt-4">
-                <h4 className="font-semibold">Search Videos</h4>
+                <h4 className="font-semibold">Wklej URL</h4>
                 <p className="text-sm text-base-content/70">
-                  Enter keywords to find relevant YouTube content
+                  Podaj link do filmu YouTube
                 </p>
               </div>
             </div>
             
             <div className="step step-primary">
               <div className="text-center mt-4">
-                <h4 className="font-semibold">Get Transcript</h4>
+                <h4 className="font-semibold">Transkrypcja</h4>
                 <p className="text-sm text-base-content/70">
-                  Automatically fetch video transcripts
+                  Automatyczne generowanie transkrypcji
                 </p>
               </div>
             </div>
             
             <div className="step step-primary">
               <div className="text-center mt-4">
-                <h4 className="font-semibold">AI Summary</h4>
+                <h4 className="font-semibold">Podsumowanie AI</h4>
                 <p className="text-sm text-base-content/70">
-                  Generate concise summaries with key insights
+                  Inteligentne streszczenie treści
                 </p>
               </div>
             </div>
             
             <div className="step step-primary">
               <div className="text-center mt-4">
-                <h4 className="font-semibold">Save & Learn</h4>
+                <h4 className="font-semibold">Biblioteka</h4>
                 <p className="text-sm text-base-content/70">
-                  Build your personal knowledge library
+                  Automatyczny zapis do kolekcji
                 </p>
               </div>
             </div>
@@ -128,12 +128,12 @@ export default function HomePage() {
             <div className="card bg-primary text-primary-content">
               <div className="card-body">
                 <h2 className="card-title text-2xl justify-center">
-                  Ready to unlock YouTube knowledge?
+                  Gotowy na odkrycie wiedzy z YouTube?
                 </h2>
-                <p>Join thousands of learners extracting insights from videos</p>
+                <p>Dołącz do tysięcy użytkowników analizujących filmy z AI</p>
                 <div className="card-actions justify-center mt-4">
                   <Link href="/sign-up" className="btn btn-secondary btn-lg">
-                    Start Free Today
+                    Rozpocznij za darmo
                   </Link>
                 </div>
               </div>
