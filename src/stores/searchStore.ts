@@ -52,7 +52,14 @@ export const useSearchStore = create<SearchStore>()(
       searchHistory: [],
       
       setQuery: (query) => set({ query }),
-      setResults: (results) => set({ results }),
+      setResults: (results) => {
+        // Ensure results is always an array
+        const safeResults = Array.isArray(results) ? results : [];
+        if (!Array.isArray(results)) {
+          console.error('⚠️ Invalid results provided to setResults:', typeof results, results);
+        }
+        set({ results: safeResults });
+      },
       setLoading: (loading) => set({ loading }),
       setError: (error, errorType = 'general') => set({ error, errorType }),
       setFilters: (filters) => set({ filters }),
@@ -70,7 +77,21 @@ export const useSearchStore = create<SearchStore>()(
     }),
     {
       name: 'search-storage',
-      partialize: (state) => ({ searchHistory: state.searchHistory }),
+      partialize: (state) => ({ 
+        searchHistory: state.searchHistory 
+        // Exclude results from persistence to prevent hydration issues
+        // Results should be fetched fresh on each session
+      }),
+      // Add hydration safety checks
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          // Ensure results is always an array after rehydration
+          if (!Array.isArray(state.results)) {
+            console.warn('🔄 Fixed invalid results state during rehydration:', state.results);
+            state.results = [];
+          }
+        }
+      },
     }
   )
 );

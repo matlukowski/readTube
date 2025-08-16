@@ -13,6 +13,31 @@ interface YtDlpVideoInfo {
   automatic_captions?: Record<string, Array<{ ext: string; url: string }>>;
 }
 
+// Function to remove duplicated text segments from subtitle content
+function removeDuplicatedSubtitleText(text: string): string {
+  if (!text || text.length === 0) return text;
+  
+  // Split into sentences and clean them
+  const sentences = text
+    .split(/[.!?]+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+  
+  // Remove exact duplicates while preserving order
+  const uniqueSentences = [];
+  const seenSentences = new Set();
+  
+  for (const sentence of sentences) {
+    const normalized = sentence.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!seenSentences.has(normalized) && normalized.length > 0) {
+      seenSentences.add(normalized);
+      uniqueSentences.push(sentence);
+    }
+  }
+  
+  return uniqueSentences.join('. ').trim();
+}
+
 // Retry function with exponential backoff
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
@@ -78,9 +103,9 @@ async function extractSubtitlesWithYtDlp(youtubeId: string): Promise<string | nu
     console.log(`📄 Subtitle file found: ${subtitleFile}`);
     console.log(`📄 Subtitle content length: ${subtitleContent.length}`);
     
-    // Parse WebVTT format
+    // Parse WebVTT format and remove duplicates
     const lines = subtitleContent.split('\n');
-    const subtitleText = lines
+    const textLines = lines
       .filter(line => 
         !line.includes('-->') && 
         !line.startsWith('WEBVTT') && 
@@ -89,15 +114,36 @@ async function extractSubtitlesWithYtDlp(youtubeId: string): Promise<string | nu
         !line.startsWith('Language:') &&
         line.trim()
       )
+      .map(line => line.replace(/<[^>]*>/g, '').trim()) // Clean HTML tags first
+      .filter(line => line.length > 0); // Remove empty lines
+    
+    // Remove consecutive duplicates and create clean text
+    const uniqueLines = [];
+    let lastLine = '';
+    
+    for (const line of textLines) {
+      const cleanLine = line
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .trim();
+      
+      // Only add if it's different from the last line (prevents immediate duplicates)
+      if (cleanLine !== lastLine && cleanLine.length > 0) {
+        uniqueLines.push(cleanLine);
+        lastLine = cleanLine;
+      }
+    }
+    
+    let subtitleText = uniqueLines
       .join(' ')
-      .replace(/<[^>]*>/g, '') // Remove HTML tags and timing markers
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .trim()
-      .replace(/\s+/g, ' ');
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    // Apply additional deduplication for sentence-level duplicates
+    subtitleText = removeDuplicatedSubtitleText(subtitleText);
     
     // Cleanup temp file
     try {
@@ -194,16 +240,37 @@ async function extractSubtitlesDirectAPI(youtubeId: string): Promise<string | nu
       return null;
     }
     
-    const subtitleText = textMatches
-      .map(match => match.replace(/<[^>]*>/g, ''))
+    // Extract and clean text with duplicate removal
+    const textSegments = textMatches
+      .map(match => match.replace(/<[^>]*>/g, '').trim())
+      .filter(text => text.length > 0);
+    
+    // Remove consecutive duplicates
+    const uniqueSegments = [];
+    let lastSegment = '';
+    
+    for (const segment of textSegments) {
+      const cleanSegment = segment
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .trim();
+      
+      if (cleanSegment !== lastSegment && cleanSegment.length > 0) {
+        uniqueSegments.push(cleanSegment);
+        lastSegment = cleanSegment;
+      }
+    }
+    
+    let subtitleText = uniqueSegments
       .join(' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .trim()
-      .replace(/\s+/g, ' ');
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    // Apply additional deduplication for sentence-level duplicates
+    subtitleText = removeDuplicatedSubtitleText(subtitleText);
     
     console.log(`✅ Direct API subtitle extraction successful. Length: ${subtitleText.length}`);
     console.log(`📝 Preview: ${subtitleText.substring(0, 200)}...`);
@@ -275,20 +342,34 @@ async function extractSubtitlesWithYtdl(youtubeId: string): Promise<string | nul
       return null;
     }
     
-    // Extract and clean text
-    const subtitleText = textMatches
-      .map(match => {
-        // Remove XML tags and decode HTML entities
-        const text = match.replace(/<[^>]*>/g, '')
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&quot;/g, '"')
-          .replace(/&#39;/g, "'");
-        return text.trim();
-      })
-      .filter(text => text.length > 0)
-      .join(' ');
+    // Extract and clean text with duplicate removal
+    const textSegments = textMatches
+      .map(match => match.replace(/<[^>]*>/g, '').trim())
+      .filter(text => text.length > 0);
+    
+    // Remove consecutive duplicates
+    const uniqueSegments = [];
+    let lastSegment = '';
+    
+    for (const segment of textSegments) {
+      const cleanSegment = segment
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .trim();
+      
+      if (cleanSegment !== lastSegment && cleanSegment.length > 0) {
+        uniqueSegments.push(cleanSegment);
+        lastSegment = cleanSegment;
+      }
+    }
+    
+    let subtitleText = uniqueSegments.join(' ');
+    
+    // Apply additional deduplication for sentence-level duplicates
+    subtitleText = removeDuplicatedSubtitleText(subtitleText);
     
     console.log(`✅ Extracted subtitle text length: ${subtitleText.length}`);
     console.log(`📝 Preview: ${subtitleText.substring(0, 200)}...`);
@@ -444,6 +525,9 @@ export async function POST(request: NextRequest) {
               })
               .filter(text => text.trim().length > 0) // Remove empty segments
               .join(' ');
+
+            // Apply deduplication to youtube-transcript library result as well
+            fullTranscript = removeDuplicatedSubtitleText(fullTranscript);
 
             transcriptionMethod = 'youtube';
             console.log(`✅ YouTube transcript library fallback successful`);

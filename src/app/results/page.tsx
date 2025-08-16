@@ -14,8 +14,16 @@ export default function ResultsPage() {
   const searchParams = useSearchParams();
   const query = searchParams.get('q') || '';
   const router = useRouter();
-  const { setQuery, setResults, setLoading, setError, clearError, loading, results, error, errorType } = useSearchStore();
+  const { setQuery, setResults, setLoading, setError, clearError, loading, results: storeResults, error, errorType } = useSearchStore();
   const { isFavorited } = useFavoriteStore();
+  
+  // Ensure results is always an array to prevent .map() errors
+  const results = Array.isArray(storeResults) ? storeResults : [];
+  
+  // Log any state issues for debugging
+  if (!Array.isArray(storeResults)) {
+    console.error('⚠️ Invalid results state detected:', typeof storeResults, storeResults);
+  }
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [totalResults, setTotalResults] = useState(0);
   const [summarizingVideos, setSummarizingVideos] = useState<Set<string>>(new Set());
