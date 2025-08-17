@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/prisma';
+import { getOrCreateUser } from '@/lib/user';
 
 // GET /api/library - Get user's saved video summaries
 export async function GET(request: NextRequest) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const { userId: clerkUserId } = await auth();
+    if (!clerkUserId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const user = await getOrCreateUser();
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
     const { searchParams } = new URL(request.url);
@@ -20,7 +26,7 @@ export async function GET(request: NextRequest) {
 
     // Build where clause for search
     const whereClause = {
-      userId,
+      userId: user.id,
       AND: [
         { summary: { not: null } }, // Only videos with summaries
         search ? {
@@ -75,7 +81,7 @@ export async function GET(request: NextRequest) {
         : video.summary
     }));
 
-    console.log(`📚 Library: Retrieved ${videos.length} videos for user ${userId}`);
+    console.log(`📚 Library: Retrieved ${videos.length} videos for user ${user.id}`);
 
     return NextResponse.json({
       videos: videosWithParsedSummary,
@@ -100,9 +106,14 @@ export async function GET(request: NextRequest) {
 // POST /api/library - Save a new video analysis to library
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const { userId: clerkUserId } = await auth();
+    if (!clerkUserId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const user = await getOrCreateUser();
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
     const body = await request.json();
@@ -141,7 +152,7 @@ export async function POST(request: NextRequest) {
     const savedVideo = await prisma.video.upsert({
       where: { youtubeId },
       update: {
-        userId,
+        userId: user.id,
         title,
         channelName,
         thumbnail,
@@ -155,7 +166,7 @@ export async function POST(request: NextRequest) {
       },
       create: {
         youtubeId,
-        userId,
+        userId: user.id,
         title,
         channelName,
         thumbnail: thumbnail || '',
@@ -204,9 +215,14 @@ export async function POST(request: NextRequest) {
 // DELETE /api/library - Remove video from library
 export async function DELETE(request: NextRequest) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const { userId: clerkUserId } = await auth();
+    if (!clerkUserId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const user = await getOrCreateUser();
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
     const { searchParams } = new URL(request.url);
@@ -223,7 +239,7 @@ export async function DELETE(request: NextRequest) {
     const deletedVideo = await prisma.video.deleteMany({
       where: {
         youtubeId,
-        userId
+        userId: user.id
       }
     });
 

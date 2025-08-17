@@ -28,7 +28,7 @@ export class AIService {
       const userPrompt = this.getUserPrompt(transcript, options);
 
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: 'gpt-5-nano',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
@@ -137,44 +137,44 @@ export class AIService {
 
   private getSystemPrompt(style: SummarizationOptions['style'], language: string = 'pl'): string {
     const baseInstructions = language === 'pl' ? `
-      Napisz BARDZO OBSZERNE I SZCZEGÓŁOWE podsumowanie jako osobistą refleksję w pierwszej osobie, jakby to były Twoje własne myśli.
+      Napisz SKRÓCONE podsumowanie w pierwszej osobie, jakby to były Twoje własne myśli i doświadczenia.
       KLUCZOWE ZASADY:
-      1. Zachowaj naturalny, konwersacyjny ton i poziom formalności z transkryptu
-      2. Używaj bezpośrednio pierwszej osoby - nie pisz "autor twierdzi" tylko "myślę że" / "uważam" / "moim zdaniem"
-      3. UWZGLĘDNIJ WSZYSTKIE KONKRETNE PRZYKŁADY, historie osobiste, anegdoty, liczby, fakty
-      4. Używaj podobnych wyrażeń i stylu komunikacji jak w oryginalnej treści
-      5. Przedstaw PEŁNY KONTEKST każdej rady czy spostrzeżenia
-      6. MINIMALNA DŁUGOŚĆ: 2000-3000 słów - to ma być wyczerpujące podsumowanie
-      7. Dziel na logiczne sekcje/akapity ale zachowaj płynność
-      8. Nie skracaj - im więcej szczegółów tym lepiej
+      1. Używaj pierwszej osoby - "myślę", "uważam", "w mojej praktyce", "nauczyłem się"
+      2. Skróć wypowiedź o około 50% zachowując pełny sens i wszystkie kluczowe informacje
+      3. Uwzględnij WSZYSTKIE przykłady, liczby, fakty - ale w skondensowanej formie
+      4. Utrzymaj naturalny, konwersacyjny ton autora
+      5. Długość: około 50% oryginalnej wypowiedzi
+      6. To ma być skrócona wersja dokładnie tych samych przemyśleń
+      7. Zachowaj logiczny przepływ i strukturę oryginalnej wypowiedzi
+      8. Nie pomijaj ważnych treści - tylko skracaj ich przedstawienie
     ` : `
-      Write a VERY COMPREHENSIVE AND DETAILED summary as a personal reflection in first person, as if these were your own thoughts.
+      Write a CONDENSED summary in first person, as if these were your own thoughts and experiences.
       KEY PRINCIPLES:
-      1. Maintain the natural, conversational tone and formality level from the transcript
-      2. Use direct first person - don't write "the author claims" but "I think" / "I believe" / "in my opinion"
-      3. INCLUDE ALL SPECIFIC EXAMPLES, personal stories, anecdotes, numbers, facts
-      4. Use similar expressions and communication style as in the original content
-      5. Present FULL CONTEXT for each piece of advice or insight
-      6. MINIMUM LENGTH: 2000-3000 words - this should be a comprehensive summary
-      7. Break into logical sections/paragraphs but maintain flow
-      8. Don't shorten - the more details the better
+      1. Use first person - "I think", "I believe", "in my practice", "I learned"
+      2. Shorten the speech by about 50% while keeping full meaning and all key information
+      3. Include ALL examples, numbers, facts - but in condensed form
+      4. Maintain the author's natural, conversational tone
+      5. Length: about 50% of the original speech
+      6. This should be a shortened version of exactly the same thoughts
+      7. Preserve logical flow and structure of original speech
+      8. Don't skip important content - just shorten its presentation
     `;
 
     switch (style) {
       case 'bullet-points':
         return `${baseInstructions}
-                ${language === 'pl' ? 'Stwórz bardzo szczegółowe podsumowanie używając rozbudowanych punktów. Każdy punkt powinien zawierać konkretne przykłady, historie i pełny kontekst. Używaj osobistego tonu i utrzymuj naturalny styl komunikacji.' : 'Create a very detailed summary using comprehensive bullet points. Each point should contain specific examples, stories and full context. Use personal tone and maintain natural communication style.'}`;
+                ${language === 'pl' ? 'Przedstaw jako skrócone punkty w pierwszej osobie. Każdy punkt to skondensowana wersja moich myśli - około 50% krócej ale z zachowaniem wszystkich ważnych informacji.' : 'Present as condensed bullet points in first person. Each point is a condensed version of my thoughts - about 50% shorter but keeping all important information.'}`;
       
       case 'paragraph':
         return `${baseInstructions}
-                ${language === 'pl' ? 'Napisz bardzo obszerne, płynne podsumowanie w formie rozbudowanych paragrafów. Uwzględnij wszystkie ważne historie, przykłady, rady i szczegóły. Używaj płynnych przejść ale zachowaj wszystkie konkretne informacje. Ma to być jak osobista, szczegółowa refleksja.' : 'Write a very comprehensive, flowing summary in the form of extended paragraphs. Include all important stories, examples, advice and details. Use smooth transitions but keep all concrete information. This should be like a personal, detailed reflection.'}`;
+                ${language === 'pl' ? 'Napisz skrócone podsumowanie w formie płynnych paragrafów w pierwszej osobie. Każda sekcja to skondensowana wersja moich oryginalnych przemyśleń - około 50% krócej.' : 'Write a condensed summary in flowing paragraphs in first person. Each section is a condensed version of my original thoughts - about 50% shorter.'}`;
       
       case 'key-insights':
         return `${baseInstructions}
-                ${language === 'pl' ? 'Skup się na najcenniejszych spostrzeżeniach ale przedstaw je BARDZO SZCZEGÓŁOWO z pełnym kontekstem, przykładami i historiami. Każde spostrzeżenie powinno być rozwinięte w kilka zdań z konkretnymi szczegółami.' : 'Focus on the most valuable insights but present them VERY THOROUGHLY with full context, examples and stories. Each insight should be expanded into several sentences with concrete details.'}`;
+                ${language === 'pl' ? 'Przedstaw najważniejsze wnioski jako skrócone refleksje w pierwszej osobie. Każde spostrzeżenie to skondensowana wersja mojego myślenia - około 50% krócej ale z kluczowymi przykładami.' : 'Present key insights as condensed reflections in first person. Each insight is a condensed version of my thinking - about 50% shorter but with key examples.'}`;
       
       default:
-        return `${baseInstructions} ${language === 'pl' ? 'Podsumuj treść jako bardzo obszerną osobistą refleksję w pierwszej osobie, utrzymując naturalny styl komunikacji i wszystkie szczegóły.' : 'Summarize the content as a very comprehensive personal reflection in first person, maintaining natural communication style and all details.'}`;
+        return `${baseInstructions} ${language === 'pl' ? 'Podsumuj treść jako skróconą wersję w pierwszej osobie - około 50% krócej, zachowując wszystkie istotne informacje.' : 'Summarize the content as a condensed version in first person - about 50% shorter, preserving all essential information.'}`;
     }
   }
 
@@ -187,27 +187,29 @@ export class AIService {
     const isPolish = options.language === 'pl';
     
     return isPolish ? 
-      `Przeanalizuj poniższy transkrypt i napisz BARDZO OBSZERNE podsumowanie w pierwszej osobie.
+      `Przeanalizuj poniższy transkrypt i napisz SKRÓCONE podsumowanie w pierwszej osobie.
       
       WYMAGANIA:
-      - MINIMALNA długość: ${options.maxLength} słów (im więcej tym lepiej!)
+      - Długość: około ${options.maxLength} słów (około 50% długości oryginału)
       - Styl: ${options.style}
-      - Zachowaj DOKŁADNIE oryginalny styl, zwroty i sposób mówienia autora
-      - Uwzględnij WSZYSTKIE przykłady, historie, liczby, fakty
-      - Nie skracaj - to ma być wyczerpujące podsumowanie
-      - Używaj pierwszej osoby jakby to były Twoje myśli
+      - Pierwsza osoba - jakby to były Twoje własne myśli
+      - Skróć wszystkie wypowiedzi o około 50% zachowując pełny sens
+      - Uwzględnij WSZYSTKIE kluczowe informacje w skondensowanej formie
+      - Zachowaj naturalny, konwersacyjny ton oryginału
+      - To ma być skrócona wersja dokładnie tych samych przemyśleń
       
       Transkrypt do przetworzenia:
       ${truncatedTranscript}` :
-      `Analyze the following transcript and write a VERY COMPREHENSIVE summary in first person.
+      `Analyze the following transcript and write a CONDENSED summary in first person.
       
       REQUIREMENTS:
-      - MINIMUM length: ${options.maxLength} words (the more the better!)
+      - Length: approximately ${options.maxLength} words (about 50% of original length)
       - Style: ${options.style}
-      - Preserve EXACTLY the original style, phrases and way of speaking
-      - Include ALL examples, stories, numbers, facts
-      - Don't shorten - this should be a comprehensive summary
-      - Use first person as if these were your thoughts
+      - First person - as if these were your own thoughts
+      - Shorten all statements by about 50% while keeping full meaning
+      - Include ALL key information in condensed form
+      - Maintain natural, conversational tone of the original
+      - This should be a shortened version of exactly the same thoughts
       
       Transcript to process:
       ${truncatedTranscript}`;

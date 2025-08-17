@@ -58,8 +58,9 @@ export default function Header() {
       <div className="navbar-end gap-2">
         {/* Language Selector */}
         <div className="dropdown dropdown-end">
-          <div tabIndex={0} role="button" className="btn btn-ghost btn-circle" title="Change Language">
+          <div tabIndex={0} role="button" className="btn btn-ghost" title="Change Language">
             <Languages className="w-5 h-5" />
+            <span className="ml-1 text-sm font-medium uppercase">{language}</span>
           </div>
           <ul tabIndex={0} className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-32 mt-1">
             <li>

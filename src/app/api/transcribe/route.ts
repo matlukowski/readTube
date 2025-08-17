@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { YoutubeTranscript } from 'youtube-transcript';
-import ytdl from '@distube/ytdl-core';
 import { transcribeRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
-import { getAIService } from '@/lib/ai';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
@@ -68,331 +66,142 @@ async function retryWithBackoff<T>(
 }
 
 // Function to extract subtitles using yt-dlp via direct CLI
-async function extractSubtitlesWithYtDlp(youtubeId: string): Promise<string | null> {
-  try {
-    console.log(`🔍 Trying yt-dlp subtitle extraction for ${youtubeId}...`);
+async function extractSubtitlesWithYtDlp(youtubeId: string, language: string = 'pl'): Promise<string | null> {
+  return retryWithBackoff(async () => {
+    console.log(`🔍 Trying yt-dlp subtitle extraction for ${youtubeId} with language preference: ${language}...`);
     const videoUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
     
     // Use direct CLI command to avoid path issues
     const execAsync = promisify(exec);
     
-    // First, try to download subtitles directly
+    // Create temp directory if it doesn't exist
     const tempDir = path.join(process.cwd(), 'temp');
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true });
     }
     
-    const command = `yt-dlp --write-auto-subs --sub-langs en --skip-download --sub-format vtt -o "${tempDir}\\%(title)s.%(ext)s" "${videoUrl}"`;
-    console.log(`🛠️ Running subtitle extraction: ${command}`);
+    // Define language priority: Polish first, then English, then auto
+    const languagesToTry = language === 'pl' 
+      ? ['pl', 'en', 'en-US', 'en-GB'] 
+      : ['en', 'en-US', 'en-GB', 'pl'];
     
-    const { stdout, stderr } = await execAsync(command);
-    console.log(`📤 yt-dlp stdout:`, stdout);
-    if (stderr) console.log(`📤 yt-dlp stderr:`, stderr);
+    let subtitleText = null;
+    const downloadedFiles: string[] = [];
     
-    // Find the downloaded subtitle file
-    const files = fs.readdirSync(tempDir).filter((f: string) => f.endsWith('.en.vtt'));
-    
-    if (files.length === 0) {
-      console.log(`❌ No subtitle file found`);
-      return null;
-    }
-    
-    const subtitleFile = path.join(tempDir, files[0]);
-    const subtitleContent = fs.readFileSync(subtitleFile, 'utf8');
-    
-    console.log(`📄 Subtitle file found: ${subtitleFile}`);
-    console.log(`📄 Subtitle content length: ${subtitleContent.length}`);
-    
-    // Parse WebVTT format and remove duplicates
-    const lines = subtitleContent.split('\n');
-    const textLines = lines
-      .filter((line: string) => 
-        !line.includes('-->') && 
-        !line.startsWith('WEBVTT') && 
-        !line.startsWith('NOTE') && 
-        !line.startsWith('Kind:') &&
-        !line.startsWith('Language:') &&
-        line.trim()
-      )
-      .map((line: string) => line.replace(/<[^>]*>/g, '').trim()) // Clean HTML tags first
-      .filter((line: string) => line.length > 0); // Remove empty lines
-    
-    // Remove consecutive duplicates and create clean text
-    const uniqueLines = [];
-    let lastLine = '';
-    
-    for (const line of textLines) {
-      const cleanLine = line
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .trim();
-      
-      // Only add if it's different from the last line (prevents immediate duplicates)
-      if (cleanLine !== lastLine && cleanLine.length > 0) {
-        uniqueLines.push(cleanLine);
-        lastLine = cleanLine;
+    // Try each language in priority order
+    for (const langCode of languagesToTry) {
+      try {
+        console.log(`  🌐 Trying language: ${langCode}`);
+        
+        const command = `yt-dlp --write-auto-subs --sub-langs ${langCode} --skip-download --sub-format vtt -o "${tempDir}\\%(title)s.%(ext)s" "${videoUrl}"`;
+        console.log(`🛠️ Running subtitle extraction: ${command}`);
+        
+        const { stdout, stderr } = await execAsync(command);
+        console.log(`📤 yt-dlp stdout:`, stdout);
+        if (stderr) console.log(`📤 yt-dlp stderr:`, stderr);
+        
+        // Check for HTTP 429 rate limiting
+        if (stderr && (stderr.includes('429') || stderr.includes('Too Many Requests'))) {
+          console.log(`⚠️ Rate limit detected, will be retried by outer retry logic`);
+          throw new Error('Rate limit exceeded (429)');
+        }
+        
+        // Find the downloaded subtitle file for this language
+        const files = fs.readdirSync(tempDir).filter((f: string) => f.endsWith(`.${langCode}.vtt`));
+        
+        if (files.length > 0) {
+          const subtitleFile = path.join(tempDir, files[0]);
+          const subtitleContent = fs.readFileSync(subtitleFile, 'utf8');
+          
+          console.log(`📄 Subtitle file found: ${subtitleFile} (${langCode})`);
+          console.log(`📄 Subtitle content length: ${subtitleContent.length}`);
+          
+          // Parse WebVTT format and remove duplicates
+          const lines = subtitleContent.split('\n');
+          const textLines = lines
+            .filter((line: string) => 
+              !line.includes('-->') && 
+              !line.startsWith('WEBVTT') && 
+              !line.startsWith('NOTE') && 
+              !line.startsWith('Kind:') &&
+              !line.startsWith('Language:') &&
+              line.trim()
+            )
+            .map((line: string) => line.replace(/<[^>]*>/g, '').trim()) // Clean HTML tags first
+            .filter((line: string) => line.length > 0); // Remove empty lines
+          
+          // Remove consecutive duplicates and create clean text
+          const uniqueLines = [];
+          let lastLine = '';
+          
+          for (const line of textLines) {
+            const cleanLine = line
+              .replace(/&amp;/g, '&')
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .replace(/&quot;/g, '"')
+              .replace(/&#39;/g, "'")
+              .trim();
+            
+            // Only add if it's different from the last line (prevents immediate duplicates)
+            if (cleanLine !== lastLine && cleanLine.length > 0) {
+              uniqueLines.push(cleanLine);
+              lastLine = cleanLine;
+            }
+          }
+          
+          subtitleText = uniqueLines
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          
+          // Apply additional deduplication for sentence-level duplicates
+          subtitleText = removeDuplicatedSubtitleText(subtitleText);
+          
+          // Track files for cleanup
+          downloadedFiles.push(subtitleFile);
+          
+          console.log(`✅ yt-dlp subtitle extraction successful with ${langCode}. Length: ${subtitleText.length}`);
+          console.log(`📝 Preview: ${subtitleText.substring(0, 200)}...`);
+          
+          break; // Found subtitles, stop trying other languages
+        } else {
+          console.log(`  ❌ No subtitle file found for language: ${langCode}`);
+        }
+        
+      } catch (langError) {
+        console.log(`  ⚠️ Error with language ${langCode}:`, langError instanceof Error ? langError.message : 'Unknown error');
+        // Check if it's a rate limit error and propagate it
+        if (langError instanceof Error && langError.message.includes('429')) {
+          throw langError;
+        }
+        // Continue to next language
       }
     }
     
-    let subtitleText = uniqueLines
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    
-    // Apply additional deduplication for sentence-level duplicates
-    subtitleText = removeDuplicatedSubtitleText(subtitleText);
-    
-    // Cleanup temp file
-    try {
-      fs.unlinkSync(subtitleFile);
-      console.log(`🧹 Cleaned up temp file: ${subtitleFile}`);
-    } catch (cleanupError) {
-      console.log(`⚠️ Failed to cleanup temp file:`, cleanupError);
+    // Cleanup all temp files
+    for (const file of downloadedFiles) {
+      try {
+        if (fs.existsSync(file)) {
+          fs.unlinkSync(file);
+          console.log(`🧹 Cleaned up temp file: ${file}`);
+        }
+      } catch (cleanupError) {
+        console.log(`⚠️ Failed to cleanup temp file:`, cleanupError);
+      }
     }
     
-    console.log(`✅ yt-dlp subtitle extraction successful. Length: ${subtitleText.length}`);
-    console.log(`📝 Preview: ${subtitleText.substring(0, 200)}...`);
+    if (!subtitleText || subtitleText.length === 0) {
+      console.log(`❌ No subtitles found in any supported language`);
+      return null;
+    }
     
     return subtitleText;
     
-  } catch (error) {
-    console.error(`❌ yt-dlp subtitle extraction failed:`, error);
-    return null;
-  }
+  }, 3, 2000); // Retry up to 3 times with 2 second base delay
 }
 
-// Function to extract subtitles using direct YouTube API approach
-async function extractSubtitlesDirectAPI(youtubeId: string): Promise<string | null> {
-  try {
-    console.log(`🔍 Trying direct YouTube API approach for ${youtubeId}...`);
-    
-    // Try to get video page HTML and extract player config
-    const videoUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
-    const response = await retryWithBackoff(() => fetch(videoUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none'
-      }
-    }));
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch video page: ${response.status}`);
-    }
-    
-    const html = await response.text();
-    
-    // Extract player configuration from HTML
-    const playerConfigMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
-    if (!playerConfigMatch) {
-      throw new Error('Could not find player configuration');
-    }
-    
-    const playerConfig = JSON.parse(playerConfigMatch[1]);
-    const captions = playerConfig?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-    
-    if (!captions || captions.length === 0) {
-      console.log(`❌ No captions found in player config`);
-      return null;
-    }
-    
-    console.log(`📝 Found ${captions.length} caption tracks via direct API`);
-    
-    // Select the best caption track
-    const selectedCaption = captions.find((c: unknown) => {
-      const caption = c as { kind?: string; languageCode?: string };
-      return caption.kind === 'asr' && caption.languageCode?.startsWith('en');
-    }) || captions.find((c: unknown) => {
-      const caption = c as { languageCode?: string };
-      return caption.languageCode?.startsWith('en');
-    }) ||
-                         captions[0];
-    
-    if (!selectedCaption) {
-      console.log(`❌ No suitable caption track found`);
-      return null;
-    }
-    
-    const selectedCaptionTyped = selectedCaption as { name?: { simpleText: string }; languageCode: string; baseUrl: string };
-    console.log(`✅ Selected caption: ${selectedCaptionTyped.name?.simpleText} (${selectedCaptionTyped.languageCode})`);
-    
-    // Fetch subtitle content with retry
-    const subtitleResponse = await retryWithBackoff(() => fetch(selectedCaptionTyped.baseUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Referer': `https://www.youtube.com/watch?v=${youtubeId}`
-      }
-    }));
-    if (!subtitleResponse.ok) {
-      throw new Error(`Failed to fetch subtitles: ${subtitleResponse.status}`);
-    }
-    
-    const xmlContent = await subtitleResponse.text();
-    
-    // Parse XML to extract text
-    const textMatches = xmlContent.match(/<text[^>]*>(.*?)<\/text>/g);
-    if (!textMatches) {
-      console.log(`❌ No text content found in subtitle XML`);
-      return null;
-    }
-    
-    // Extract and clean text with duplicate removal
-    const textSegments = textMatches
-      .map(match => match.replace(/<[^>]*>/g, '').trim())
-      .filter(text => text.length > 0);
-    
-    // Remove consecutive duplicates
-    const uniqueSegments = [];
-    let lastSegment = '';
-    
-    for (const segment of textSegments) {
-      const cleanSegment = segment
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .trim();
-      
-      if (cleanSegment !== lastSegment && cleanSegment.length > 0) {
-        uniqueSegments.push(cleanSegment);
-        lastSegment = cleanSegment;
-      }
-    }
-    
-    let subtitleText = uniqueSegments
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    
-    // Apply additional deduplication for sentence-level duplicates
-    subtitleText = removeDuplicatedSubtitleText(subtitleText);
-    
-    console.log(`✅ Direct API subtitle extraction successful. Length: ${subtitleText.length}`);
-    console.log(`📝 Preview: ${subtitleText.substring(0, 200)}...`);
-    
-    return subtitleText;
-    
-  } catch (error) {
-    console.error(`❌ Direct API subtitle extraction failed:`, error);
-    return null;
-  }
-}
 
-// Function to extract subtitles using ytdl-core
-async function extractSubtitlesWithYtdl(youtubeId: string): Promise<string | null> {
-  try {
-    const videoUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
-    console.log(`🔍 Getting video info for ${youtubeId} with ytdl-core...`);
-    
-    const info = await ytdl.getInfo(videoUrl);
-    console.log(`📊 Video info obtained. Title: ${info.videoDetails.title}`);
-    
-    // Get player_response with subtitle info
-    const playerResponse = info.player_response;
-    const captions = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-    
-    if (!captions || captions.length === 0) {
-      console.log(`❌ No captions found in video info`);
-      return null;
-    }
-    
-    console.log(`📝 Found ${captions.length} caption tracks:`);
-    captions.forEach((caption: unknown, index: number) => {
-      const c = caption as { name?: { simpleText: string }; languageCode: string; kind?: string };
-      console.log(`  ${index}: ${c.name?.simpleText} (${c.languageCode}) - kind: ${c.kind || 'manual'}`);
-    });
-    
-    // Prioritize auto-generated subtitles, then manual ones
-    const selectedCaption = captions.find((c: unknown) => {
-      const caption = c as { kind?: string };
-      return caption.kind === 'asr';
-    }) || captions.find((c: unknown) => {
-      const caption = c as { languageCode?: string };
-      return caption.languageCode?.startsWith('en');
-    }) || captions[0];
-    
-    if (!selectedCaption) {
-      console.log(`❌ No suitable caption track found`);
-      return null;
-    }
-    
-    const selectedCap = selectedCaption as { name?: { simpleText: string }; languageCode: string; kind?: string; baseUrl: string };
-    console.log(`✅ Selected caption: ${selectedCap.name?.simpleText} (${selectedCap.languageCode}) - kind: ${selectedCap.kind || 'manual'}`);
-    
-    // Fetch the subtitle content
-    const subtitleUrl = selectedCap.baseUrl;
-    console.log(`🔗 Fetching subtitles from: ${subtitleUrl}`);
-    
-    const response = await retryWithBackoff(() => fetch(subtitleUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Referer': `https://www.youtube.com/watch?v=${youtubeId}`
-      }
-    }));
-    if (!response.ok) {
-      throw new Error(`Failed to fetch subtitles: ${response.status}`);
-    }
-    
-    const xmlContent = await response.text();
-    console.log(`📄 Subtitle XML length: ${xmlContent.length}`);
-    
-    // Parse XML to extract text content
-    const textMatches = xmlContent.match(/<text[^>]*>(.*?)<\/text>/g);
-    if (!textMatches) {
-      console.log(`❌ No text content found in subtitle XML`);
-      return null;
-    }
-    
-    // Extract and clean text with duplicate removal
-    const textSegments = textMatches
-      .map(match => match.replace(/<[^>]*>/g, '').trim())
-      .filter(text => text.length > 0);
-    
-    // Remove consecutive duplicates
-    const uniqueSegments = [];
-    let lastSegment = '';
-    
-    for (const segment of textSegments) {
-      const cleanSegment = segment
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .trim();
-      
-      if (cleanSegment !== lastSegment && cleanSegment.length > 0) {
-        uniqueSegments.push(cleanSegment);
-        lastSegment = cleanSegment;
-      }
-    }
-    
-    let subtitleText = uniqueSegments.join(' ');
-    
-    // Apply additional deduplication for sentence-level duplicates
-    subtitleText = removeDuplicatedSubtitleText(subtitleText);
-    
-    console.log(`✅ Extracted subtitle text length: ${subtitleText.length}`);
-    console.log(`📝 Preview: ${subtitleText.substring(0, 200)}...`);
-    
-    return subtitleText;
-    
-  } catch (error) {
-    console.error(`❌ ytdl-core subtitle extraction failed:`, error);
-    return null;
-  }
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -418,151 +227,72 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    let fullTranscript: string;
-    let transcriptionMethod: 'youtube' | 'whisper';
+    let fullTranscript: string | null = null;
+    const transcriptionMethod = 'youtube' as const;
 
-    try {
-      // Method 1: Try yt-dlp (most reliable in 2024/2025)
-      console.log(`🔍 Trying yt-dlp subtitle extraction for ${youtubeId}...`);
-      const ytDlpResult = await extractSubtitlesWithYtDlp(youtubeId);
+    // Method 1: Try yt-dlp (most reliable)
+    console.log(`🔍 [1/2] Trying yt-dlp subtitle extraction for ${youtubeId}...`);
+    fullTranscript = await extractSubtitlesWithYtDlp(youtubeId, language);
+    
+    if (fullTranscript && fullTranscript.length > 0) {
+      console.log(`✅ yt-dlp successful. Length: ${fullTranscript.length}`);
+    } else {
+      console.log(`⚠️ yt-dlp failed, trying youtube-transcript library...`);
       
-      if (ytDlpResult && ytDlpResult.length > 0) {
-        fullTranscript = ytDlpResult;
-        transcriptionMethod = 'youtube';
-        console.log(`✅ yt-dlp subtitle extraction successful`);
-      } else {
-        console.log(`⚠️ yt-dlp failed, trying direct API approach...`);
+      // Method 2: Try youtube-transcript library
+      console.log(`🔍 [2/2] Trying youtube-transcript library for ${youtubeId}...`);
+      try {
+        let transcriptData = null;
+        const languagesToTry = [
+          language || 'en',
+          'auto',
+          'en', 'en-US', 'en-GB',
+          'pl'
+        ];
         
-        // Method 2: Try direct YouTube API approach
-        const directAPIResult = await extractSubtitlesDirectAPI(youtubeId);
+        const uniqueLanguages = [...new Set(languagesToTry)];
         
-        if (directAPIResult && directAPIResult.length > 0) {
-          fullTranscript = directAPIResult;
-          transcriptionMethod = 'youtube';
-          console.log(`✅ Direct API subtitle extraction successful`);
-        } else {
-          console.log(`⚠️ Direct API failed, trying ytdl-core...`);
-          
-          // Method 3: Try ytdl-core as fallback
-          const ytdlResult = await extractSubtitlesWithYtdl(youtubeId);
-          
-          if (ytdlResult && ytdlResult.length > 0) {
-            fullTranscript = ytdlResult;
-            transcriptionMethod = 'youtube';
-            console.log(`✅ ytdl-core subtitle extraction successful`);
-          } else {
-            console.log(`⚠️ ytdl-core failed, trying youtube-transcript library...`);
+        for (const lang of uniqueLanguages) {
+          try {
+            console.log(`  Trying language: ${lang}`);
             
-            // Method 4: Fallback to youtube-transcript library
-            let transcriptData;
-            const languagesToTry = [
-              // Auto-detect first
-              'auto',
-              // English variants
-              'en', 'en-US', 'en-GB', 'en-CA', 'en-AU',
-              // Polish variants  
-              'pl', 'pl-PL',
-              // User specified language
-              language || 'en',
-              // Common languages
-              'es', 'fr', 'de', 'it', 'pt', 'ru', 'ja', 'ko', 'zh', 'hi'
-            ];
-            
-            // Remove duplicates
-            const uniqueLanguages = [...new Set(languagesToTry)];
-            
-            for (const lang of uniqueLanguages) {
-              try {
-                console.log(`🔍 Trying language: ${lang}`);
-                
-                if (lang === 'auto') {
-                  // Try without language specification (auto-detect)
-                  transcriptData = await YoutubeTranscript.fetchTranscript(youtubeId);
-                } else {
-                  // Try with specific language
-                  transcriptData = await YoutubeTranscript.fetchTranscript(youtubeId, { 
-                    lang
-                  });
-                }
-                
-                // Check if we actually got content
-                if (transcriptData && transcriptData.length > 0) {
-                  console.log(`✅ Successfully fetched subtitles with language: ${lang}`);
-                  console.log(`📊 Found ${transcriptData.length} subtitle segments`);
-                  break;
-                } else {
-                  console.log(`⚠️ Language ${lang} returned empty transcript, continuing...`);
-                  transcriptData = null;
-                }
-              } catch (langError) {
-                const errorMessage = langError instanceof Error ? langError.message : 'Unknown error';
-                console.log(`❌ Failed with language ${lang}:`, errorMessage);
-                continue;
-              }
+            if (lang === 'auto') {
+              transcriptData = await YoutubeTranscript.fetchTranscript(youtubeId);
+            } else {
+              transcriptData = await YoutubeTranscript.fetchTranscript(youtubeId, { lang });
             }
-            
-            if (!transcriptData) {
-              throw new Error('No subtitles available in any language');
-            }
-
-            console.log(`🔍 Raw transcript data structure:`, {
-              isArray: Array.isArray(transcriptData),
-              length: transcriptData?.length || 0,
-              type: typeof transcriptData
-            });
             
             if (transcriptData && transcriptData.length > 0) {
-              console.log(`📊 Transcript segments count:`, transcriptData.length);
-              console.log(`🔍 First segment structure:`, {
-                text: transcriptData[0]?.text?.substring(0, 50) + '...',
-                offset: transcriptData[0]?.offset,
-                duration: transcriptData[0]?.duration,
-                keys: Object.keys(transcriptData[0] || {})
-              });
-              console.log(`🔍 Last segment:`, transcriptData[transcriptData.length - 1]);
-            } else {
-              console.log(`⚠️ Empty or invalid transcript data received`);
+              console.log(`  ✓ Found ${transcriptData.length} segments with language: ${lang}`);
+              break;
             }
-
-            fullTranscript = transcriptData
-              .map((segment, index) => {
-                if (index < 3) { // Only log first 3 segments to avoid spam
-                  console.log(`🔍 Processing segment ${index}:`, {
-                    text: segment.text?.substring(0, 30) + '...',
-                    offset: segment.offset,
-                    hasText: !!segment.text
-                  });
-                }
-                return segment.text || '';
-              })
-              .filter(text => text.trim().length > 0) // Remove empty segments
-              .join(' ');
-
-            // Apply deduplication to youtube-transcript library result as well
-            fullTranscript = removeDuplicatedSubtitleText(fullTranscript);
-
-            transcriptionMethod = 'youtube';
-            console.log(`✅ YouTube transcript library fallback successful`);
+          } catch {
+            continue;
           }
         }
-      }
-      
-      console.log(`🔍 Final transcript length:`, fullTranscript?.length || 0);
-      console.log(`🔍 Final transcript preview:`, fullTranscript?.substring(0, 200) || 'EMPTY');
-    } catch (youtubeError) {
-      console.log(`⚠️ YouTube subtitles failed for ${youtubeId}, trying Whisper...`);
-      
-      try {
-        // Fallback to Whisper API (paid but reliable)
-        const ai = getAIService();
-        fullTranscript = await ai.transcribeYouTubeVideo(youtubeId);
-        transcriptionMethod = 'whisper';
-        console.log(`✅ Whisper transcript generated for ${youtubeId}`);
-      } catch (whisperError) {
-        console.error('Both transcription methods failed:', { youtubeError, whisperError });
-        throw new Error('Transcript not available and audio transcription failed');
+        
+        if (transcriptData && transcriptData.length > 0) {
+          fullTranscript = transcriptData
+            .map(segment => segment.text || '')
+            .filter(text => text.trim().length > 0)
+            .join(' ');
+          
+          fullTranscript = removeDuplicatedSubtitleText(fullTranscript);
+          console.log(`✅ YouTube transcript library successful. Length: ${fullTranscript.length}`);
+        }
+      } catch (error) {
+        console.log(`⚠️ YouTube transcript library error:`, error instanceof Error ? error.message : 'Unknown error');
       }
     }
+    
+    // If no transcript found, return error
+    if (!fullTranscript || fullTranscript.length === 0) {
+      console.log(`❌ All subtitle extraction methods failed for ${youtubeId}`);
+      throw new Error('Niestety YouTube nie udostępnia napisów dla tego filmu. Brak możliwości przeczytania video. Musisz obejrzeć aby ogarnąć co podmiot liryczny miał na myśli.');
+    }
+    
+    console.log(`
+📊 Final Result: ${transcriptionMethod} | ${fullTranscript.length} chars`);
 
     // Save or update video with transcript
     await prisma.video.upsert({

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import Image from 'next/image';
@@ -40,14 +40,34 @@ function AnalyzeContent() {
     step: string;
     completed: boolean;
   }[]>([]);
+  const [hasInitialized, setHasInitialized] = useState(false);
+  const [language, setLanguage] = useState('pl');
+  const isAnalyzingRef = useRef(false);
+
+  // Get language from localStorage
+  useEffect(() => {
+    const savedLanguage = localStorage.getItem('language') || 'pl';
+    setLanguage(savedLanguage);
+
+    // Listen for language changes
+    const handleLanguageChange = (event: CustomEvent) => {
+      setLanguage(event.detail);
+    };
+
+    window.addEventListener('languageChange', handleLanguageChange as EventListener);
+    return () => {
+      window.removeEventListener('languageChange', handleLanguageChange as EventListener);
+    };
+  }, []);
 
   // Get video ID from URL params on mount
   useEffect(() => {
     const videoParam = searchParams.get('v');
-    if (videoParam) {
+    if (videoParam && !hasInitialized && !isAnalyzing && !isAnalyzingRef.current) {
+      setHasInitialized(true);
       handleAnalyze(videoParam);
     }
-  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchParams, hasInitialized, isAnalyzing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateProgress = (stepName: string, completed: boolean = false) => {
     setProgress(prev => {
@@ -68,7 +88,14 @@ function AnalyzeContent() {
       return;
     }
 
+    // Prevent duplicate calls with double protection
+    if (isAnalyzing || isAnalyzingRef.current) {
+      console.log('⚠️ Analysis already in progress, skipping duplicate call');
+      return;
+    }
+
     setIsAnalyzing(true);
+    isAnalyzingRef.current = true;
     setCurrentStep('analyzing');
     setError('');
     setProgress([]);
@@ -105,7 +132,7 @@ function AnalyzeContent() {
       const transcriptResponse = await fetch('/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ youtubeId, language: 'pl' })
+        body: JSON.stringify({ youtubeId, language })
       });
 
       if (!transcriptResponse.ok) {
@@ -125,7 +152,7 @@ function AnalyzeContent() {
           transcript,
           maxLength: 2500,
           style: 'paragraph',
-          language: 'pl'
+          language
         })
       });
 
@@ -176,6 +203,7 @@ function AnalyzeContent() {
       setCurrentStep('error');
     } finally {
       setIsAnalyzing(false);
+      isAnalyzingRef.current = false;
     }
   };
 
@@ -184,6 +212,8 @@ function AnalyzeContent() {
     setAnalysisResult(null);
     setError('');
     setProgress([]);
+    setHasInitialized(false);
+    isAnalyzingRef.current = false;
     // Clear URL params
     router.push('/analyze');
   };
