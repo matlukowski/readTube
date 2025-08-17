@@ -48,8 +48,6 @@ export default function Header() {
           {isSignedIn && (
             <>
               <li><Link href="/library">Biblioteka</Link></li>
-              <li><Link href="/dashboard">Dashboard</Link></li>
-              <li><Link href="/favorites">Favorites</Link></li>
             </>
           )}
         </ul>

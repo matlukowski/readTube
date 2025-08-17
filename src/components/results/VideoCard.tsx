@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Clock, Eye, Heart, BookOpen, ExternalLink } from 'lucide-react';
+import { Clock, Eye, BookOpen, ExternalLink } from 'lucide-react';
 import Image from 'next/image';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -19,16 +19,12 @@ interface VideoCardProps {
     summary?: string;
     transcript?: string;
   };
-  onFavorite?: (videoId: string) => void;
-  isFavorited?: boolean;
   onSummaryModal?: (videoId: string) => void;
   isSummarizing?: boolean;
 }
 
 export default function VideoCard({
   video,
-  onFavorite,
-  isFavorited = false,
   onSummaryModal,
   isSummarizing = false,
 }: VideoCardProps) {
@@ -100,13 +96,6 @@ export default function VideoCard({
 
         <div className="card-actions justify-between mt-4">
           <div className="flex gap-2">
-            <button
-              className={`btn btn-sm ${isFavorited ? 'btn-error' : 'btn-outline'}`}
-              onClick={() => onFavorite?.(video.youtubeId)}
-            >
-              <Heart className={`w-4 h-4 ${isFavorited ? 'fill-current' : ''}`} />
-            </button>
-            
             <a
               href={`https://youtube.com/watch?v=${video.youtubeId}`}
               target="_blank"

@@ -7,7 +7,6 @@ import SearchBar from '@/components/search/SearchBar';
 import VideoCard from '@/components/results/VideoCard';
 import SummaryModal from '@/components/ui/SummaryModal';
 import { useSearchStore, SearchResult } from '@/stores/searchStore';
-import { useFavoriteStore } from '@/stores/favoriteStore';
 import { Loader2, AlertCircle, LogIn, RefreshCw } from 'lucide-react';
 
 function ResultsPageContent() {
@@ -15,7 +14,6 @@ function ResultsPageContent() {
   const query = searchParams.get('q') || '';
   const router = useRouter();
   const { setResults, setLoading, setError, clearError, loading, results: storeResults, error, errorType, getCachedSearch, setCachedSearch } = useSearchStore();
-  const { isFavorited } = useFavoriteStore();
   
   // Ensure results is always an array to prevent .map() errors
   const results = useMemo(() => Array.isArray(storeResults) ? storeResults : [], [storeResults]);
@@ -221,29 +219,6 @@ function ResultsPageContent() {
     });
   };
 
-  const handleFavorite = async (youtubeId: string) => {
-    const video = results.find(v => v.youtubeId === youtubeId);
-    if (!video) return;
-
-    const action = isFavorited(youtubeId) ? 'remove' : 'add';
-    
-    try {
-      const response = await fetch('/api/favorites', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoId: video.id,
-          action,
-        }),
-      });
-
-      if (response.ok) {
-        // Update favorite store will be handled by the component
-      }
-    } catch (error) {
-      console.error('Favorite action failed:', error);
-    }
-  };
 
   const loadMore = () => {
     if (nextPageToken && !loading) {
@@ -355,8 +330,6 @@ function ResultsPageContent() {
                 <VideoCard
                   key={video.youtubeId}
                   video={video}
-                  isFavorited={isFavorited(video.youtubeId)}
-                  onFavorite={handleFavorite}
                   onSummaryModal={handleSummaryModal}
                   isSummarizing={summarizingVideos.has(video.youtubeId)}
                 />

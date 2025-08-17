@@ -104,7 +104,7 @@ export default function SearchPage() {
               <li>Use specific keywords for better results</li>
               <li>Filter by duration to find bite-sized or in-depth content</li>
               <li>Sort by upload date to get the latest information</li>
-              <li>Save interesting videos to your favorites for later</li>
+              <li>Analyze videos to get AI-generated summaries and insights</li>
             </ul>
           </div>
         </div>
