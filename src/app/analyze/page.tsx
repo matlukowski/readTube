@@ -150,7 +150,7 @@ function AnalyzeContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transcript,
-          maxLength: 2500,
+          maxLength: 1000,
           style: 'paragraph',
           language
         })
@@ -407,7 +407,7 @@ function AnalyzeContent() {
                   <div className="card-body">
                     <h2 className="card-title mb-4">
                       <BookOpen className="w-5 h-5" />
-                      Podsumowanie AI
+                      Podsumowanie filmu
                     </h2>
                     
                     <div className="prose prose-sm max-w-none">
@@ -416,6 +416,15 @@ function AnalyzeContent() {
                           {paragraph}
                         </p>
                       ))}
+                    </div>
+
+                    {/* Footer with paraphrase information */}
+                    <div className="mt-6 pt-4 border-t border-base-300">
+                      <p className="text-xs text-base-content/60 leading-relaxed">
+                        💡 <strong>Informacja:</strong> Powyższy tekst to skrócona parafraza słów autora filmu. 
+                        Aby zapoznać się w pełni z treścią, obejrzyj oryginalny film klikając przycisk{' '}
+                        <span className="font-medium">"YouTube"</span> pod miniaturką.
+                      </p>
                     </div>
                   </div>
                 </div>

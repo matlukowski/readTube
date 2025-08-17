@@ -186,7 +186,7 @@ async function transcribeWithGladia(audioPath: string): Promise<string> {
       },
       body: JSON.stringify({
         audio_url: audioUrl,
-        language_behaviour: 'automatic single language'
+        detect_language: true
       }),
     });
     

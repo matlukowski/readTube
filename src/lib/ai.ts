@@ -137,27 +137,37 @@ export class AIService {
 
   private getSystemPrompt(style: SummarizationOptions['style'], language: string = 'pl'): string {
     const baseInstructions = language === 'pl' ? `
-      Napisz SKRÓCONE podsumowanie w pierwszej osobie, jakby to były Twoje własne myśli i doświadczenia.
-      KLUCZOWE ZASADY:
-      1. Używaj pierwszej osoby - "myślę", "uważam", "w mojej praktyce", "nauczyłem się"
-      2. Skróć wypowiedź o około 50% zachowując pełny sens i wszystkie kluczowe informacje
-      3. Uwzględnij WSZYSTKIE przykłady, liczby, fakty - ale w skondensowanej formie
-      4. Utrzymaj naturalny, konwersacyjny ton autora
-      5. Długość: około 50% oryginalnej wypowiedzi
-      6. To ma być skrócona wersja dokładnie tych samych przemyśleń
-      7. Zachowaj logiczny przepływ i strukturę oryginalnej wypowiedzi
-      8. Nie pomijaj ważnych treści - tylko skracaj ich przedstawienie
+      Napisz ZWIĘZŁE, ale KOMPLETNE podsumowanie w pierwszej osobie, jakby to były Twoje własne myśli.
+      
+      STRATEGIA SELEKCJI TREŚCI:
+      1. Wybierz 3-5 najważniejszych tematów/myśli z całej wypowiedzi
+      2. Każdy temat przedstaw w 2-3 zdaniach maksymalnie
+      3. Zachowaj konkretne przykłady i liczby, ale skróć je o 70%
+      4. Pomiń powtórzenia, dygresje i wypełniacze
+      5. Skup się na praktycznych wnioskach i actionable insights
+      
+      STYL PISANIA:
+      6. Używaj pierwszej osoby - "myślę", "uważam", "w mojej praktyce"
+      7. Utrzymaj naturalny, konwersacyjny ton autora
+      8. Maksymalna gęstość informacji - każde zdanie musi być wartościowe
+      9. Logiczne grupowanie podobnych myśli w paragrafach
+      10. Nie tłumacz się z długością - skup się na jakości treści
     ` : `
-      Write a CONDENSED summary in first person, as if these were your own thoughts and experiences.
-      KEY PRINCIPLES:
-      1. Use first person - "I think", "I believe", "in my practice", "I learned"
-      2. Shorten the speech by about 50% while keeping full meaning and all key information
-      3. Include ALL examples, numbers, facts - but in condensed form
-      4. Maintain the author's natural, conversational tone
-      5. Length: about 50% of the original speech
-      6. This should be a shortened version of exactly the same thoughts
-      7. Preserve logical flow and structure of original speech
-      8. Don't skip important content - just shorten its presentation
+      Write a CONCISE but COMPLETE summary in first person, as if these were your own thoughts.
+      
+      CONTENT SELECTION STRATEGY:
+      1. Choose 3-5 most important topics/thoughts from the entire speech
+      2. Present each topic in 2-3 sentences maximum
+      3. Keep concrete examples and numbers, but shorten them by 70%
+      4. Skip repetitions, digressions and fillers
+      5. Focus on practical conclusions and actionable insights
+      
+      WRITING STYLE:
+      6. Use first person - "I think", "I believe", "in my practice"
+      7. Maintain author's natural, conversational tone
+      8. Maximum information density - every sentence must be valuable
+      9. Logical grouping of similar thoughts in paragraphs
+      10. Don't apologize for brevity - focus on content quality
     `;
 
     switch (style) {
@@ -187,29 +197,41 @@ export class AIService {
     const isPolish = options.language === 'pl';
     
     return isPolish ? 
-      `Przeanalizuj poniższy transkrypt i napisz SKRÓCONE podsumowanie w pierwszej osobie.
+      `Przeanalizuj poniższy transkrypt i napisz ZWIĘZŁE ale KOMPLETNE podsumowanie w pierwszej osobie.
       
-      WYMAGANIA:
-      - Długość: około ${options.maxLength} słów (około 50% długości oryginału)
+      KLUCZOWE WYMAGANIA ZWIĘZŁOŚCI:
+      - Długość: MAKSYMALNIE ${options.maxLength} słów (to jest twardy limit!)
       - Styl: ${options.style}
-      - Pierwsza osoba - jakby to były Twoje własne myśli
-      - Skróć wszystkie wypowiedzi o około 50% zachowując pełny sens
-      - Uwzględnij WSZYSTKIE kluczowe informacje w skondensowanej formie
-      - Zachowaj naturalny, konwersacyjny ton oryginału
-      - To ma być skrócona wersja dokładnie tych samych przemyśleń
+      - Wybierz tylko 3-5 najważniejszych tematów z całej wypowiedzi
+      - Każdy temat opisz w 2-3 zdaniach maksymalnie
+      - Zachowaj konkretne przykłady i liczby, ale skróć je o 70%
+      - Pomiń wszystkie powtórzenia, dygresje i wypełniacze
+      - Skup się na praktycznych wnioskach i actionable insights
+      - Pierwsza osoba - jakby to były Twoje myśli: "myślę", "uważam", "w mojej praktyce"
+      - Maksymalna gęstość informacji - każde słowo musi być wartościowe
+      
+      PRZYKŁAD TRANSFORMACJI:
+      Zamiast: "Chciałbym powiedzieć, że moim zdaniem, w kontekście tego co mówiłem wcześniej..."
+      Pisz: "Uważam, że..."
       
       Transkrypt do przetworzenia:
       ${truncatedTranscript}` :
-      `Analyze the following transcript and write a CONDENSED summary in first person.
+      `Analyze the following transcript and write a CONCISE but COMPLETE summary in first person.
       
-      REQUIREMENTS:
-      - Length: approximately ${options.maxLength} words (about 50% of original length)
+      KEY CONCISENESS REQUIREMENTS:
+      - Length: MAXIMUM ${options.maxLength} words (this is a hard limit!)
       - Style: ${options.style}
-      - First person - as if these were your own thoughts
-      - Shorten all statements by about 50% while keeping full meaning
-      - Include ALL key information in condensed form
-      - Maintain natural, conversational tone of the original
-      - This should be a shortened version of exactly the same thoughts
+      - Choose only 3-5 most important topics from the entire speech
+      - Describe each topic in 2-3 sentences maximum
+      - Keep concrete examples and numbers, but shorten them by 70%
+      - Skip all repetitions, digressions and fillers
+      - Focus on practical conclusions and actionable insights
+      - First person - as if these were your thoughts: "I think", "I believe", "in my practice"
+      - Maximum information density - every word must be valuable
+      
+      TRANSFORMATION EXAMPLE:
+      Instead of: "I would like to say that in my opinion, in the context of what I mentioned earlier..."
+      Write: "I believe that..."
       
       Transcript to process:
       ${truncatedTranscript}`;
