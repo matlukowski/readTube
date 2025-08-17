@@ -199,12 +199,38 @@ async function transcribeWithGladia(audioPath: string): Promise<string> {
     const { id } = await response.json();
     console.log(`🆔 Gladia transcription ID: ${id}`);
     
-    // Poll for results (Gladia processes asynchronously)
+    // Get file size for adaptive polling
+    const stats = fs.statSync(audioPath);
+    const sizeMB = stats.size / (1024 * 1024);
+    
+    // Adaptive polling strategy based on file size
+    const getPollingInterval = (attempt: number, fileSizeMB: number): number => {
+      // Base interval: 3-10 seconds based on file size
+      const baseInterval = Math.min(10000, Math.max(3000, fileSizeMB * 1000));
+      
+      // Exponential backoff for longer files after 3 attempts
+      if (attempt <= 3) {
+        return baseInterval;
+      } else {
+        const multiplier = Math.min(1.5, 1 + (attempt - 3) * 0.1);
+        return Math.floor(baseInterval * multiplier);
+      }
+    };
+    
+    // Estimate processing time and max attempts
+    const estimatedSeconds = Math.ceil(sizeMB * 2.5); // ~2.5 seconds per MB
+    const maxAttempts = Math.min(40, Math.max(15, Math.ceil(estimatedSeconds / 5) + 10));
+    
+    console.log(`📊 Audio size: ${sizeMB.toFixed(1)}MB, estimated processing: ~${estimatedSeconds}s, max attempts: ${maxAttempts}`);
+    
+    // Poll for results with adaptive intervals
     let attempts = 0;
-    const maxAttempts = 60; // 5 minutes max
     
     while (attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+      attempts++;
+      
+      const pollingInterval = getPollingInterval(attempts, sizeMB);
+      await new Promise(resolve => setTimeout(resolve, pollingInterval));
       
       const statusResponse = await fetch(`https://api.gladia.io/v2/pre-recorded/${id}`, {
         headers: {
@@ -241,8 +267,14 @@ async function transcribeWithGladia(audioPath: string): Promise<string> {
         throw new Error(`Gladia transcription failed: ${result.error}`);
       }
       
-      attempts++;
-      console.log(`⏳ Waiting for Gladia... (attempt ${attempts}/${maxAttempts})`);
+      // Calculate and show progress
+      const progress = Math.min(90, (attempts / maxAttempts) * 100);
+      console.log(`⏳ Waiting for Gladia... (attempt ${attempts}/${maxAttempts}, ${progress.toFixed(0)}% estimated)`);
+      
+      // Early exit if we're way over estimated time
+      if (attempts > estimatedSeconds / 3 && attempts > 10) {
+        console.log(`⚠️ Processing taking longer than expected (${attempts * pollingInterval / 1000}s vs estimated ${estimatedSeconds}s)`);
+      }
     }
     
     throw new Error('Gladia transcription timeout - took too long to process');

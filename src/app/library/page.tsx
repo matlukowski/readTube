@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Search, Clock, Eye, BookOpen, Trash2, ExternalLink, AlertCircle } from 'lucide-react';
+import { Search, Clock, Eye, BookOpen, Trash2, ExternalLink, AlertCircle, Save } from 'lucide-react';
 import Header from '@/components/layout/Header';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -46,6 +46,7 @@ export default function LibraryPage() {
   const [pagination, setPagination] = useState<LibraryResponse['pagination'] | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<LibraryVideo | null>(null);
   const [deletingVideo, setDeletingVideo] = useState<string>('');
+  const [videoToDelete, setVideoToDelete] = useState<LibraryVideo | null>(null);
 
   // Redirect to sign-in if not authenticated
   useEffect(() => {
@@ -106,12 +107,16 @@ export default function LibraryPage() {
     loadVideos(newPage, searchQuery);
   };
 
-  // Handle video deletion
-  const handleDeleteVideo = async (youtubeId: string) => {
-    if (!confirm('Czy na pewno chcesz usunąć ten film z biblioteki?')) {
-      return;
-    }
+  // Initiate delete confirmation
+  const initiateDelete = (video: LibraryVideo) => {
+    setVideoToDelete(video);
+  };
 
+  // Confirm and execute video deletion
+  const confirmDelete = async () => {
+    if (!videoToDelete) return;
+
+    const youtubeId = videoToDelete.youtubeId;
     setDeletingVideo(youtubeId);
     
     try {
@@ -131,6 +136,9 @@ export default function LibraryPage() {
       if (selectedVideo?.youtubeId === youtubeId) {
         setSelectedVideo(null);
       }
+
+      // Close delete modal
+      setVideoToDelete(null);
 
       console.log(`🗑️ Video deleted from library: ${youtubeId}`);
 
@@ -264,7 +272,7 @@ export default function LibraryPage() {
                         </a>
                         
                         <button
-                          onClick={() => handleDeleteVideo(video.youtubeId)}
+                          onClick={() => initiateDelete(video)}
                           disabled={deletingVideo === video.youtubeId}
                           className="btn btn-xs btn-outline btn-error"
                           title="Usuń z biblioteki"
@@ -338,8 +346,8 @@ export default function LibraryPage() {
         {/* Video Detail Modal */}
         {selectedVideo && (
           <div className="modal modal-open">
-            <div className="modal-box max-w-4xl w-full h-5/6 max-h-none">
-              <div className="flex items-start justify-between mb-4">
+            <div className="modal-box w-11/12 max-w-4xl h-5/6 max-h-screen overflow-y-auto">
+              <div className="flex items-start justify-between mb-2 sm:mb-4">
                 <div className="flex-1 pr-4">
                   <h3 className="font-bold text-lg line-clamp-2">{selectedVideo.title}</h3>
                   <p className="text-sm text-base-content/60">{selectedVideo.channelName}</p>
@@ -352,60 +360,88 @@ export default function LibraryPage() {
                 </button>
               </div>
 
-              <div className="grid lg:grid-cols-3 gap-6">
-                {/* Video Info */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8">
+                {/* Video Details */}
                 <div className="lg:col-span-1">
-                  <figure className="relative mb-4">
-                    <Image
-                      src={selectedVideo.thumbnail}
-                      alt={selectedVideo.title}
-                      width={320}
-                      height={180}
-                      className="w-full h-32 object-cover rounded"
-                    />
-                    {selectedVideo.duration && (
-                      <span className="absolute bottom-2 right-2 badge badge-neutral">
-                        <Clock className="w-3 h-3 mr-1" />
-                        {selectedVideo.duration}
-                      </span>
-                    )}
-                  </figure>
-
-                  <div className="space-y-2 text-sm">
-                    {selectedVideo.viewCount && (
-                      <div className="flex items-center gap-2">
-                        <Eye className="w-4 h-4" />
-                        <span>{selectedVideo.viewCount}</span>
+                  <div className="card bg-base-100 shadow-xl">
+                    <figure className="relative">
+                      <Image
+                        src={selectedVideo.thumbnail}
+                        alt={selectedVideo.title}
+                        width={320}
+                        height={180}
+                        className="w-full h-32 sm:h-48 object-cover"
+                      />
+                      {selectedVideo.duration && (
+                        <span className="absolute bottom-2 right-2 badge badge-neutral">
+                          <Clock className="w-3 h-3 mr-1" />
+                          {selectedVideo.duration}
+                        </span>
+                      )}
+                    </figure>
+                    
+                    <div className="card-body">
+                      <h2 className="card-title line-clamp-2">{selectedVideo.title}</h2>
+                      <p className="text-sm text-base-content/70">{selectedVideo.channelName}</p>
+                      
+                      <div className="flex items-center gap-4 text-sm text-base-content/60 mt-2">
+                        {selectedVideo.viewCount && (
+                          <span className="flex items-center gap-1">
+                            <Eye className="w-3 h-3" />
+                            {selectedVideo.viewCount}
+                          </span>
+                        )}
                       </div>
-                    )}
-                    <div>
-                      <strong>Dodano:</strong> {formatDistanceToNow(new Date(selectedVideo.createdAt), { addSuffix: true })}
+
+                      {selectedVideo.description && (
+                        <p className="text-sm mt-2 line-clamp-3">{selectedVideo.description}</p>
+                      )}
+
+                      <div className="card-actions justify-between mt-4">
+                        <a
+                          href={`https://youtube.com/watch?v=${selectedVideo.youtubeId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-sm btn-outline"
+                        >
+                          <ExternalLink className="w-4 h-4 mr-1" />
+                          YouTube
+                        </a>
+                        
+                        <span className="badge badge-success">
+                          <Save className="w-3 h-3 mr-1" />
+                          Zapisane
+                        </span>
+                      </div>
                     </div>
-                    <a
-                      href={`https://youtube.com/watch?v=${selectedVideo.youtubeId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-sm btn-outline w-full"
-                    >
-                      <ExternalLink className="w-4 h-4 mr-2" />
-                      Zobacz na YouTube
-                    </a>
                   </div>
                 </div>
 
                 {/* Summary */}
                 <div className="lg:col-span-2">
-                  <h4 className="font-semibold mb-4 flex items-center">
-                    <BookOpen className="w-4 h-4 mr-2" />
-                    Podsumowanie AI
-                  </h4>
-                  <div className="h-96 overflow-y-auto border rounded-lg p-4 bg-base-100">
-                    <div className="prose prose-sm max-w-none">
-                      {selectedVideo.summary.split('\n').map((paragraph, index) => (
-                        <p key={index} className="mb-4 leading-relaxed">
-                          {paragraph}
+                  <div className="card bg-base-100 shadow-xl">
+                    <div className="card-body">
+                      <h2 className="card-title mb-4">
+                        <BookOpen className="w-5 h-5" />
+                        Podsumowanie filmu
+                      </h2>
+                      
+                      <div className="prose prose-sm max-w-none">
+                        {selectedVideo.summary.split('\n').map((paragraph, index) => (
+                          <p key={index} className="mb-4 leading-relaxed">
+                            {paragraph}
+                          </p>
+                        ))}
+                      </div>
+
+                      {/* Footer with paraphrase information */}
+                      <div className="mt-6 pt-4 border-t border-base-300">
+                        <p className="text-xs text-base-content/60 leading-relaxed">
+                          💡 <strong>Informacja:</strong> Powyższy tekst to skrócona parafraza słów autora filmu. 
+                          Aby zapoznać się w pełni z treścią, obejrzyj oryginalny film klikając przycisk{' '}
+                          <span className="font-medium">"YouTube"</span> pod miniaturką.
                         </p>
-                      ))}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -413,6 +449,66 @@ export default function LibraryPage() {
             </div>
             
             <div className="modal-backdrop" onClick={() => setSelectedVideo(null)}>
+              <button>close</button>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {videoToDelete && (
+          <div className="modal modal-open">
+            <div className="modal-box">
+              <h3 className="font-bold text-lg flex items-center">
+                <Trash2 className="w-5 h-5 mr-2 text-error" />
+                Potwierdź usunięcie
+              </h3>
+              
+              <div className="py-4">
+                <p className="mb-4">Czy na pewno chcesz usunąć ten film z biblioteki?</p>
+                
+                <div className="flex items-start gap-3 p-3 bg-base-200 rounded-lg">
+                  <Image
+                    src={videoToDelete.thumbnail}
+                    alt={videoToDelete.title}
+                    width={80}
+                    height={45}
+                    className="w-20 h-11 object-cover rounded"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-medium text-sm line-clamp-2">{videoToDelete.title}</h4>
+                    <p className="text-xs text-base-content/60">{videoToDelete.channelName}</p>
+                  </div>
+                </div>
+                
+                <p className="text-sm text-base-content/70 mt-3">
+                  ⚠️ Ta akcja jest nieodwracalna. Podsumowanie zostanie trwale usunięte.
+                </p>
+              </div>
+
+              <div className="modal-action">
+                <button 
+                  className="btn btn-ghost" 
+                  onClick={() => setVideoToDelete(null)}
+                  disabled={deletingVideo === videoToDelete.youtubeId}
+                >
+                  Anuluj
+                </button>
+                <button 
+                  className="btn btn-error" 
+                  onClick={confirmDelete}
+                  disabled={deletingVideo === videoToDelete.youtubeId}
+                >
+                  {deletingVideo === videoToDelete.youtubeId ? (
+                    <span className="loading loading-spinner loading-xs mr-2"></span>
+                  ) : (
+                    <Trash2 className="w-4 h-4 mr-2" />
+                  )}
+                  Usuń
+                </button>
+              </div>
+            </div>
+            
+            <div className="modal-backdrop" onClick={() => setVideoToDelete(null)}>
               <button>close</button>
             </div>
           </div>
