@@ -1,207 +1,267 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { YoutubeTranscript } from 'youtube-transcript';
 import { transcribeRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
+import ytdl from '@distube/ytdl-core';
 
-// Types for yt-dlp response (currently unused but kept for future use)
-// interface YtDlpVideoInfo {
-//   title?: string;
-//   subtitles?: Record<string, Array<{ ext: string; url: string }>>;
-//   automatic_captions?: Record<string, Array<{ ext: string; url: string }>>;
-// }
+// Rate limiting configuration
+const requestQueue = new Map<string, number[]>();
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+const MAX_REQUESTS_PER_MINUTE = 10;
 
-// Function to remove duplicated text segments from subtitle content
-function removeDuplicatedSubtitleText(text: string): string {
-  if (!text || text.length === 0) return text;
+// Check if user has exceeded rate limit
+async function checkRateLimit(userId: string): Promise<boolean> {
+  const now = Date.now();
+  const userRequests = requestQueue.get(userId) || [];
   
-  // Split into sentences and clean them
-  const sentences = text
-    .split(/[.!?]+/)
-    .map(s => s.trim())
-    .filter(s => s.length > 0);
+  // Filter out requests older than the window
+  const recentRequests = userRequests.filter(time => now - time < RATE_LIMIT_WINDOW);
   
-  // Remove exact duplicates while preserving order
-  const uniqueSentences = [];
-  const seenSentences = new Set();
+  if (recentRequests.length >= MAX_REQUESTS_PER_MINUTE) {
+    return false;
+  }
   
-  for (const sentence of sentences) {
-    const normalized = sentence.toLowerCase().replace(/\s+/g, ' ').trim();
-    if (!seenSentences.has(normalized) && normalized.length > 0) {
-      seenSentences.add(normalized);
-      uniqueSentences.push(sentence);
+  // Add current request and update queue
+  recentRequests.push(now);
+  requestQueue.set(userId, recentRequests);
+  return true;
+}
+
+// Download audio from YouTube using ytdl-core
+async function downloadAudioWithYtdlCore(youtubeId: string): Promise<string> {
+  const tempDir = path.join(process.cwd(), 'temp');
+  const audioPath = path.join(tempDir, `${youtubeId}.webm`);
+  
+  // Create temp directory if it doesn't exist
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+  
+  // Check if audio already exists (cache for 24 hours)
+  if (fs.existsSync(audioPath)) {
+    const stats = fs.statSync(audioPath);
+    const hoursSinceCreation = (Date.now() - stats.mtimeMs) / (1000 * 60 * 60);
+    if (hoursSinceCreation < 24) {
+      console.log(`💾 Using cached audio for ${youtubeId}`);
+      return audioPath;
+    } else {
+      // Delete old cached file
+      fs.unlinkSync(audioPath);
     }
   }
   
-  return uniqueSentences.join('. ').trim();
-}
-
-// Retry function with exponential backoff
-async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
-  retries: number = 3,
-  baseDelay: number = 1000
-): Promise<T> {
-  let lastError: Error;
+  const videoUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
   
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error('Unknown error');
+  try {
+    console.log(`🎵 Downloading audio for ${youtubeId}...`);
+    
+    // Get video info first to check if it exists
+    const info = await ytdl.getInfo(videoUrl);
+    console.log(`📹 Video found: ${info.videoDetails.title}`);
+    
+    // Create audio stream - download only audio in highest quality
+    const audioStream = ytdl(videoUrl, {
+      filter: 'audioonly',
+      quality: 'highestaudio',
+    });
+    
+    // Create write stream
+    const writeStream = fs.createWriteStream(audioPath);
+    
+    // Pipe audio stream to file
+    audioStream.pipe(writeStream);
+    
+    // Return promise that resolves when download is complete
+    return new Promise((resolve, reject) => {
+      writeStream.on('finish', () => {
+        const stats = fs.statSync(audioPath);
+        console.log(`✅ Audio downloaded: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+        resolve(audioPath);
+      });
       
-      if (i === retries - 1) break;
+      writeStream.on('error', (error) => {
+        console.error('❌ Error writing audio file:', error);
+        reject(error);
+      });
       
-      const delay = baseDelay * Math.pow(2, i) + Math.random() * 1000;
-      console.log(`🔄 Retry ${i + 1}/${retries} after ${Math.round(delay)}ms...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-  
-  throw lastError!;
-}
-
-// Function to extract subtitles using yt-dlp via direct CLI
-async function extractSubtitlesWithYtDlp(youtubeId: string, language: string = 'pl'): Promise<string | null> {
-  return retryWithBackoff(async () => {
-    console.log(`🔍 Trying yt-dlp subtitle extraction for ${youtubeId} with language preference: ${language}...`);
-    const videoUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
+      audioStream.on('error', (error) => {
+        console.error('❌ Error downloading audio:', error);
+        reject(error);
+      });
+    });
     
-    // Use direct CLI command to avoid path issues
-    const execAsync = promisify(exec);
+  } catch (error) {
+    console.error(`❌ Error with ytdl-core:`, error instanceof Error ? error.message : 'Unknown error');
     
-    // Create temp directory if it doesn't exist
-    const tempDir = path.join(process.cwd(), 'temp');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-    
-    // Define language priority: Polish first, then English, then auto
-    const languagesToTry = language === 'pl' 
-      ? ['pl', 'en', 'en-US', 'en-GB'] 
-      : ['en', 'en-US', 'en-GB', 'pl'];
-    
-    let subtitleText = null;
-    const downloadedFiles: string[] = [];
-    
-    // Try each language in priority order
-    for (const langCode of languagesToTry) {
-      try {
-        console.log(`  🌐 Trying language: ${langCode}`);
-        
-        const command = `yt-dlp --write-auto-subs --sub-langs ${langCode} --skip-download --sub-format vtt -o "${tempDir}\\%(title)s.%(ext)s" "${videoUrl}"`;
-        console.log(`🛠️ Running subtitle extraction: ${command}`);
-        
-        const { stdout, stderr } = await execAsync(command);
-        console.log(`📤 yt-dlp stdout:`, stdout);
-        if (stderr) console.log(`📤 yt-dlp stderr:`, stderr);
-        
-        // Check for HTTP 429 rate limiting
-        if (stderr && (stderr.includes('429') || stderr.includes('Too Many Requests'))) {
-          console.log(`⚠️ Rate limit detected, will be retried by outer retry logic`);
-          throw new Error('Rate limit exceeded (429)');
-        }
-        
-        // Find the downloaded subtitle file for this language
-        const files = fs.readdirSync(tempDir).filter((f: string) => f.endsWith(`.${langCode}.vtt`));
-        
-        if (files.length > 0) {
-          const subtitleFile = path.join(tempDir, files[0]);
-          const subtitleContent = fs.readFileSync(subtitleFile, 'utf8');
-          
-          console.log(`📄 Subtitle file found: ${subtitleFile} (${langCode})`);
-          console.log(`📄 Subtitle content length: ${subtitleContent.length}`);
-          
-          // Parse WebVTT format and remove duplicates
-          const lines = subtitleContent.split('\n');
-          const textLines = lines
-            .filter((line: string) => 
-              !line.includes('-->') && 
-              !line.startsWith('WEBVTT') && 
-              !line.startsWith('NOTE') && 
-              !line.startsWith('Kind:') &&
-              !line.startsWith('Language:') &&
-              line.trim()
-            )
-            .map((line: string) => line.replace(/<[^>]*>/g, '').trim()) // Clean HTML tags first
-            .filter((line: string) => line.length > 0); // Remove empty lines
-          
-          // Remove consecutive duplicates and create clean text
-          const uniqueLines = [];
-          let lastLine = '';
-          
-          for (const line of textLines) {
-            const cleanLine = line
-              .replace(/&amp;/g, '&')
-              .replace(/&lt;/g, '<')
-              .replace(/&gt;/g, '>')
-              .replace(/&quot;/g, '"')
-              .replace(/&#39;/g, "'")
-              .trim();
-            
-            // Only add if it's different from the last line (prevents immediate duplicates)
-            if (cleanLine !== lastLine && cleanLine.length > 0) {
-              uniqueLines.push(cleanLine);
-              lastLine = cleanLine;
-            }
-          }
-          
-          subtitleText = uniqueLines
-            .join(' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-          
-          // Apply additional deduplication for sentence-level duplicates
-          subtitleText = removeDuplicatedSubtitleText(subtitleText);
-          
-          // Track files for cleanup
-          downloadedFiles.push(subtitleFile);
-          
-          console.log(`✅ yt-dlp subtitle extraction successful with ${langCode}. Length: ${subtitleText.length}`);
-          console.log(`📝 Preview: ${subtitleText.substring(0, 200)}...`);
-          
-          break; // Found subtitles, stop trying other languages
-        } else {
-          console.log(`  ❌ No subtitle file found for language: ${langCode}`);
-        }
-        
-      } catch (langError) {
-        console.log(`  ⚠️ Error with language ${langCode}:`, langError instanceof Error ? langError.message : 'Unknown error');
-        // Check if it's a rate limit error and propagate it
-        if (langError instanceof Error && langError.message.includes('429')) {
-          throw langError;
-        }
-        // Continue to next language
+    // Handle specific ytdl errors
+    if (error instanceof Error) {
+      if (error.message.includes('429') || error.message.includes('Too Many Requests')) {
+        throw new Error('RATE_LIMIT');
+      }
+      if (error.message.includes('403') || error.message.includes('Forbidden')) {
+        throw new Error('VIDEO_FORBIDDEN');
+      }
+      if (error.message.includes('404') || error.message.includes('not found')) {
+        throw new Error('VIDEO_NOT_FOUND');
+      }
+      if (error.message.includes('private') || error.message.includes('unavailable')) {
+        throw new Error('VIDEO_UNAVAILABLE');
       }
     }
     
-    // Cleanup all temp files
-    for (const file of downloadedFiles) {
-      try {
-        if (fs.existsSync(file)) {
-          fs.unlinkSync(file);
-          console.log(`🧹 Cleaned up temp file: ${file}`);
+    throw error;
+  }
+}
+
+// Upload audio file to Gladia API
+async function uploadAudioToGladia(audioPath: string, apiKey: string): Promise<string> {
+  try {
+    console.log(`📤 Uploading audio to Gladia...`);
+    
+    // Read audio file into buffer
+    const audioBuffer = fs.readFileSync(audioPath);
+    const audioBlob = new Blob([audioBuffer], { type: 'audio/webm' });
+    
+    // Create form data with audio file
+    const formData = new FormData();
+    formData.append('audio', audioBlob, path.basename(audioPath));
+    
+    // Upload to Gladia /v2/upload endpoint
+    const response = await fetch('https://api.gladia.io/v2/upload', {
+      method: 'POST',
+      headers: {
+        'x-gladia-key': apiKey,
+        // Don't set Content-Type - let fetch set it automatically for FormData
+      },
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      const error = await response.text();
+      console.error(`❌ Gladia upload error:`, error);
+      throw new Error(`Gladia upload error: ${response.status} - ${error}`);
+    }
+    
+    const result = await response.json();
+    const audioUrl = result.audio_url;
+    
+    if (!audioUrl) {
+      console.error('❌ No audio_url in Gladia upload response:', result);
+      throw new Error('No audio_url received from Gladia upload');
+    }
+    
+    console.log(`✅ Audio uploaded successfully: ${audioUrl}`);
+    return audioUrl;
+    
+  } catch (error) {
+    console.error(`❌ Error uploading audio to Gladia:`, error);
+    throw error;
+  }
+}
+
+// Transcribe audio using Gladia API (two-step process)
+async function transcribeWithGladia(audioPath: string): Promise<string> {
+  const apiKey = process.env.GLADIA_API_KEY;
+  
+  if (!apiKey || apiKey === 'YOUR_GLADIA_API_KEY_HERE') {
+    throw new Error('Gladia API key not configured. Please add your API key to .env.local');
+  }
+  
+  try {
+    console.log(`🎙️ Starting Gladia transcription workflow...`);
+    
+    // Step 1: Upload audio file
+    const audioUrl = await uploadAudioToGladia(audioPath, apiKey);
+    
+    // Step 2: Start transcription with JSON request
+    console.log(`🚀 Starting transcription for uploaded audio...`);
+    
+    const response = await fetch('https://api.gladia.io/v2/pre-recorded', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-gladia-key': apiKey,
+      },
+      body: JSON.stringify({
+        audio_url: audioUrl,
+        language_behaviour: 'automatic single language'
+      }),
+    });
+    
+    if (!response.ok) {
+      const error = await response.text();
+      console.error(`❌ Gladia transcription start error:`, error);
+      throw new Error(`Gladia transcription start error: ${response.status} - ${error}`);
+    }
+    
+    const { id } = await response.json();
+    console.log(`🆔 Gladia transcription ID: ${id}`);
+    
+    // Poll for results (Gladia processes asynchronously)
+    let attempts = 0;
+    const maxAttempts = 60; // 5 minutes max
+    
+    while (attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+      
+      const statusResponse = await fetch(`https://api.gladia.io/v2/pre-recorded/${id}`, {
+        headers: {
+          'x-gladia-key': apiKey,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!statusResponse.ok) {
+        const error = await statusResponse.text();
+        console.error(`❌ Gladia status check error:`, error);
+        throw new Error(`Gladia status check error: ${statusResponse.status}`);
+      }
+      
+      const result = await statusResponse.json();
+      
+      if (result.status === 'done') {
+        console.log(`✅ Gladia transcription completed`);
+        
+        // Extract transcript from result
+        if (result.result?.transcription?.full_transcript) {
+          return result.result.transcription.full_transcript;
+        } else if (result.result?.transcription?.utterances) {
+          // Fallback to utterances if full_transcript not available
+          return result.result.transcription.utterances
+            .map((u: any) => u.text)
+            .join(' ');
         }
+        
+        console.error('❌ No transcript found in Gladia response');
+        throw new Error('No transcript found in Gladia response');
+      } else if (result.status === 'error') {
+        console.error(`❌ Gladia transcription failed:`, result.error);
+        throw new Error(`Gladia transcription failed: ${result.error}`);
+      }
+      
+      attempts++;
+      console.log(`⏳ Waiting for Gladia... (attempt ${attempts}/${maxAttempts})`);
+    }
+    
+    throw new Error('Gladia transcription timeout - took too long to process');
+    
+  } catch (error) {
+    console.error(`❌ Gladia transcription error:`, error);
+    throw error;
+  } finally {
+    // Clean up audio file after transcription attempt
+    if (audioPath && fs.existsSync(audioPath)) {
+      try {
+        fs.unlinkSync(audioPath);
+        console.log(`🗑️ Cleaned up audio file: ${audioPath}`);
       } catch (cleanupError) {
-        console.log(`⚠️ Failed to cleanup temp file:`, cleanupError);
+        console.warn(`⚠️ Could not clean up audio file:`, cleanupError);
       }
     }
-    
-    if (!subtitleText || subtitleText.length === 0) {
-      console.log(`❌ No subtitles found in any supported language`);
-      return null;
-    }
-    
-    return subtitleText;
-    
-  }, 3, 2000); // Retry up to 3 times with 2 second base delay
+  }
 }
-
-
 
 export async function POST(request: NextRequest) {
   try {
@@ -209,155 +269,148 @@ export async function POST(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    
+    // Check rate limit for this user
+    const canProceed = await checkRateLimit(userId);
+    if (!canProceed) {
+      return NextResponse.json(
+        { 
+          error: 'Too many requests. Please wait a minute before trying again.',
+          retryAfter: 60
+        },
+        { status: 429 }
+      );
+    }
 
     const body = await request.json();
-    const { youtubeId, language } = transcribeRequestSchema.parse(body);
+    const { youtubeId } = transcribeRequestSchema.parse(body);
 
-    // Check if transcript already exists in database
+    // Check if transcript already exists in database with cache validation
     const existingVideo = await prisma.video.findUnique({
       where: { youtubeId },
-      select: { transcript: true },
+      select: { 
+        transcript: true,
+        updatedAt: true 
+      },
     });
+    
+    // Cache duration: 7 days
+    const CACHE_DURATION = 7 * 24 * 60 * 60 * 1000;
+    const isCacheValid = existingVideo?.transcript && 
+      existingVideo.updatedAt && 
+      (Date.now() - new Date(existingVideo.updatedAt).getTime() < CACHE_DURATION);
 
-    if (existingVideo?.transcript) {
-      console.log('🔙 Backend returning cached transcript. Length:', existingVideo.transcript?.length || 'NO TRANSCRIPT');
+    if (isCacheValid && existingVideo?.transcript) {
+      console.log('📦 Returning cached transcript');
       return NextResponse.json({ 
         transcript: existingVideo.transcript,
-        cached: true 
+        cached: true,
+        source: 'cache',
+        cacheAge: Math.round((Date.now() - new Date(existingVideo.updatedAt).getTime()) / 1000)
       });
     }
 
-    let fullTranscript: string | null = null;
-    const transcriptionMethod = 'youtube' as const;
-
-    // Method 1: Try yt-dlp (most reliable)
-    console.log(`🔍 [1/2] Trying yt-dlp subtitle extraction for ${youtubeId}...`);
-    fullTranscript = await extractSubtitlesWithYtDlp(youtubeId, language);
+    // New workflow: Audio → Gladia → Transcript
+    console.log(`🚀 Starting transcription workflow for ${youtubeId}`);
     
-    if (fullTranscript && fullTranscript.length > 0) {
-      console.log(`✅ yt-dlp successful. Length: ${fullTranscript.length}`);
-    } else {
-      console.log(`⚠️ yt-dlp failed, trying youtube-transcript library...`);
-      
-      // Method 2: Try youtube-transcript library
-      console.log(`🔍 [2/2] Trying youtube-transcript library for ${youtubeId}...`);
-      try {
-        let transcriptData = null;
-        const languagesToTry = [
-          language || 'en',
-          'auto',
-          'en', 'en-US', 'en-GB',
-          'pl'
-        ];
-        
-        const uniqueLanguages = [...new Set(languagesToTry)];
-        
-        for (const lang of uniqueLanguages) {
-          try {
-            console.log(`  Trying language: ${lang}`);
-            
-            if (lang === 'auto') {
-              transcriptData = await YoutubeTranscript.fetchTranscript(youtubeId);
-            } else {
-              transcriptData = await YoutubeTranscript.fetchTranscript(youtubeId, { lang });
-            }
-            
-            if (transcriptData && transcriptData.length > 0) {
-              console.log(`  ✓ Found ${transcriptData.length} segments with language: ${lang}`);
-              break;
-            }
-          } catch {
-            continue;
-          }
-        }
-        
-        if (transcriptData && transcriptData.length > 0) {
-          fullTranscript = transcriptData
-            .map(segment => segment.text || '')
-            .filter(text => text.trim().length > 0)
-            .join(' ');
-          
-          fullTranscript = removeDuplicatedSubtitleText(fullTranscript);
-          console.log(`✅ YouTube transcript library successful. Length: ${fullTranscript.length}`);
-        }
-      } catch (error) {
-        console.log(`⚠️ YouTube transcript library error:`, error instanceof Error ? error.message : 'Unknown error');
-      }
+    // Step 1: Download audio using ytdl-core
+    const audioPath = await downloadAudioWithYtdlCore(youtubeId);
+    
+    // Step 2: Transcribe using Gladia
+    const transcript = await transcribeWithGladia(audioPath);
+    
+    if (!transcript || transcript.length === 0) {
+      throw new Error('Empty transcript received from Gladia');
     }
     
-    // If no transcript found, return error
-    if (!fullTranscript || fullTranscript.length === 0) {
-      console.log(`❌ All subtitle extraction methods failed for ${youtubeId}`);
-      throw new Error('Niestety YouTube nie udostępnia napisów dla tego filmu. Brak możliwości przeczytania video. Musisz obejrzeć aby ogarnąć co podmiot liryczny miał na myśli.');
-    }
-    
-    console.log(`
-📊 Final Result: ${transcriptionMethod} | ${fullTranscript.length} chars`);
+    console.log(`📊 Transcript extracted: ${transcript.length} characters`);
 
-    // Save or update video with transcript
+    // Save transcript to database
     await prisma.video.upsert({
       where: { youtubeId },
-      update: { transcript: fullTranscript },
+      update: { transcript },
       create: {
         youtubeId,
-        title: 'Pending', // Will be updated when video details are fetched
+        title: 'Pending',
         channelName: 'Pending',
         thumbnail: '',
-        transcript: fullTranscript,
+        transcript,
       },
     });
 
-    console.log('🔙 Backend returning transcript. Length:', fullTranscript?.length || 'NO TRANSCRIPT');
-    console.log('🔙 Backend transcript preview:', fullTranscript?.substring(0, 100) || 'EMPTY');
-    
-    const responseData = { 
-      transcript: fullTranscript,
+    return NextResponse.json({ 
+      transcript,
       cached: false,
-      method: transcriptionMethod
-    };
+      source: 'gladia'
+    });
     
-    console.log('🔙 Backend response data:', JSON.stringify(responseData, null, 2));
-    
-    return NextResponse.json(responseData);
   } catch (error) {
     console.error('Transcribe API error:', error);
     
-    // Handle specific youtube-transcript errors
     if (error instanceof Error) {
-      console.log('🔍 Error details:', {
-        message: error.message,
-        stack: error.stack?.substring(0, 200),
-        name: error.name
-      });
-      
-      if (error.message.includes('Could not find') || error.message.includes('No subtitles')) {
+      // Handle specific error cases with user-friendly messages
+      if (error.message === 'RATE_LIMIT') {
         return NextResponse.json(
-          { error: 'No subtitles found for this video. The video may not have auto-generated or manual subtitles available.' },
+          { 
+            error: 'YouTube is currently rate limiting requests. Please try again in a few minutes.',
+            retryAfter: 300, // 5 minutes
+            code: 'RATE_LIMIT'
+          },
+          { status: 429 }
+        );
+      }
+      if (error.message === 'VIDEO_FORBIDDEN') {
+        return NextResponse.json(
+          { 
+            error: 'This video may be private, age-restricted, or not available in your region.',
+            code: 'VIDEO_FORBIDDEN'
+          },
+          { status: 403 }
+        );
+      }
+      if (error.message === 'VIDEO_NOT_FOUND') {
+        return NextResponse.json(
+          { 
+            error: 'Video not found. Please check the URL and try again.',
+            code: 'VIDEO_NOT_FOUND'
+          },
           { status: 404 }
         );
       }
-      if (error.message.includes('Disabled') || error.message.includes('disabled')) {
+      if (error.message === 'VIDEO_UNAVAILABLE') {
         return NextResponse.json(
-          { error: 'Subtitles are disabled for this video by the creator.' },
-          { status: 403 }
+          { 
+            error: 'This video is unavailable or has been deleted.',
+            code: 'VIDEO_UNAVAILABLE'
+          },
+          { status: 404 }
         );
       }
-      if (error.message.includes('private') || error.message.includes('Private')) {
+      if (error.message.includes('Gladia API key not configured')) {
         return NextResponse.json(
-          { error: 'Cannot access subtitles for private videos.' },
-          { status: 403 }
+          { 
+            error: 'Transcription service not configured. Please contact support.',
+            code: 'CONFIG_ERROR'
+          },
+          { status: 500 }
         );
       }
-      if (error.message.includes('not available') || error.message.includes('unavailable')) {
+      if (error.message.includes('Gladia')) {
         return NextResponse.json(
-          { error: 'Video or subtitles temporarily unavailable. Please try again later.' },
+          { 
+            error: 'Transcription service temporarily unavailable. Please try again later.',
+            code: 'TRANSCRIPTION_ERROR'
+          },
           { status: 503 }
         );
       }
     }
     
     return NextResponse.json(
-      { error: 'Failed to fetch transcript' },
+      { 
+        error: 'Failed to transcribe video. Please try again later.',
+        code: 'UNKNOWN_ERROR'
+      },
       { status: 500 }
     );
   }
