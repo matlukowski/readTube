@@ -4,91 +4,104 @@ import { transcribeRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
 import { checkUsageLimit, logVideoUsage } from '@/lib/usageMiddleware';
 import { YouTubeAPI } from '@/lib/youtube';
-// @ts-expect-error - no types available for youtube-captions-scraper
-import { getSubtitles } from 'youtube-captions-scraper';
+import { TranscriptList } from '@osiris-ai/youtube-captions-sdk';
 
-interface Caption {
-  text: string;
-  start?: string;
-  dur?: string;
-}
-
-// Get transcript from YouTube captions (manual or automatic)
+// Get transcript from YouTube captions using modern SDK
 async function getYouTubeTranscript(youtubeId: string): Promise<string | null> {
   try {
     console.log(`🎬 Fetching YouTube captions for ${youtubeId}...`);
     
-    // Try different languages in order of preference
-    const languages = ['pl', 'en', 'en-US', 'pl-PL', 'auto', 'es', 'de', 'fr'];
+    // Pobierz listę dostępnych transkryptów
+    const transcriptList = await TranscriptList.fetch(youtubeId);
     
-    for (const lang of languages) {
+    if (!transcriptList) {
+      console.log(`❌ No transcript list available for ${youtubeId}`);
+      return null;
+    }
+    
+    console.log(`📋 Transcript list retrieved for ${youtubeId}`);
+    
+    // Próbuj różne języki w kolejności preferencji
+    const languagePreferences = [
+      ['pl', 'pl-PL'],           // Polski
+      ['en', 'en-US', 'en-GB'],  // Angielski
+      ['es', 'de', 'fr', 'it']   // Inne popularne języki
+    ];
+    
+    for (const languages of languagePreferences) {
       try {
-        console.log(`🔍 Trying language: ${lang}`);
+        console.log(`🔍 Trying languages: ${languages.join(', ')}`);
+        const transcript = transcriptList.find(languages);
         
-        const captions = await getSubtitles({
-          videoID: youtubeId,
-          lang: lang === 'auto' ? 'en' : lang // fallback for auto
-        }) as Caption[];
-        
-        if (captions && captions.length > 0) {
-          console.log(`✅ Captions found in language: ${lang} (${captions.length} segments)`);
+        if (transcript) {
+          console.log(`✅ Found transcript in languages: ${languages.join(', ')}`);
           
-          // Convert captions to clean text suitable for AI processing
-          const plainText = captions
-            .map((item: Caption) => item.text || '')
-            .join(' ')
-            .replace(/\[.*?\]/g, '')     // Remove [Music], [Applause], etc.
-            .replace(/\(.*?\)/g, '')     // Remove (background noise), etc.
-            .replace(/&amp;/g, '&')     // Decode HTML entities
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&quot;/g, '"')
-            .replace(/&#39;/g, "'")
-            .replace(/\s+/g, ' ')        // Normalize whitespace
-            .trim();
+          // Pobierz zawartość transkryptu
+          const fetchedTranscript = await transcript.fetch();
           
-          if (plainText.length > 0) {
-            console.log(`✅ YouTube captions extracted: ${plainText.length} characters`);
-            console.log(`📝 Preview: ${plainText.substring(0, 200)}...`);
-            return plainText;
+          if (fetchedTranscript && fetchedTranscript.snippets) {
+            console.log(`📝 Retrieved ${fetchedTranscript.snippets.length} transcript snippets`);
+            
+            // Konwertuj snippets do czystego tekstu
+            const plainText = fetchedTranscript.snippets
+              .map((snippet: { text?: string }) => snippet.text || '')
+              .join(' ')
+              .replace(/\[.*?\]/g, '')     // Remove [Music], etc.
+              .replace(/\(.*?\)/g, '')     // Remove (noise), etc.
+              .replace(/&amp;/g, '&')
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .replace(/&quot;/g, '"')
+              .replace(/&#39;/g, "'")
+              .replace(/\s+/g, ' ')
+              .trim();
+            
+            if (plainText.length > 0) {
+              console.log(`✅ Transcript extracted: ${plainText.length} characters`);
+              console.log(`📝 Preview: ${plainText.substring(0, 200)}...`);
+              return plainText;
+            }
           }
         }
       } catch {
-        console.log(`Language ${lang} not available, trying next...`);
+        console.log(`Failed to fetch transcript for ${languages.join(', ')}, trying next...`);
         continue;
       }
     }
     
-    // If no language worked, try the old library as fallback
-    console.log(`⚠️ youtube-captions-scraper failed, trying fallback...`);
+    // Jeśli określone języki nie zadziałały, spróbuj pobrać pierwszy dostępny
+    console.log(`⚠️ No preferred languages found, trying first available transcript...`);
     try {
-      const { YoutubeTranscript } = await import('youtube-transcript');
-      const transcriptArray = await YoutubeTranscript.fetchTranscript(youtubeId);
+      // Spróbuj pobrać jakikolwiek dostępny transkrypt
+      // Użyjmy metody find bez argumentów, aby pobrać pierwszy dostępny
+      const transcript = transcriptList.find([]);
       
-      if (transcriptArray && transcriptArray.length > 0) {
-        const plainText = transcriptArray
-          .map(item => item.text)
-          .join(' ')
-          .replace(/\[.*?\]/g, '')
-          .replace(/\(.*?\)/g, '')
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&quot;/g, '"')
-          .replace(/&#39;/g, "'")
-          .replace(/\s+/g, ' ')
-          .trim();
+      if (transcript) {
+        // Pobierz pierwszy dostępny bez względu na język
+        const fetchedTranscript = await transcript.fetch();
         
-        if (plainText.length > 0) {
-          console.log(`✅ Fallback library success: ${plainText.length} characters`);
-          return plainText;
+        if (fetchedTranscript && fetchedTranscript.snippets) {
+          console.log(`✅ Found fallback transcript with ${fetchedTranscript.snippets.length} snippets`);
+          
+          const plainText = fetchedTranscript.snippets
+            .map((snippet: { text?: string }) => snippet.text || '')
+            .join(' ')
+            .replace(/\[.*?\]/g, '')
+            .replace(/\(.*?\)/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+            
+          if (plainText.length > 0) {
+            console.log(`✅ Fallback transcript extracted: ${plainText.length} characters`);
+            return plainText;
+          }
         }
       }
     } catch (fallbackError) {
-      console.log(`❌ Fallback library also failed:`, fallbackError);
+      console.log(`❌ Could not fetch any available transcript:`, fallbackError);
     }
     
-    console.log(`❌ No captions found for ${youtubeId} in any language or method`);
+    console.log(`❌ No captions found for ${youtubeId} using any method`);
     return null;
     
   } catch (error) {
