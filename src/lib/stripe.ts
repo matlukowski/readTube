@@ -1,10 +1,17 @@
 import Stripe from 'stripe';
 
-// Server-side Stripe instance
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-07-30.basil',
-  typescript: true,
-});
+// Check if Stripe is configured
+export function isStripeEnabled(): boolean {
+  return !!process.env.STRIPE_SECRET_KEY;
+}
+
+// Server-side Stripe instance - only initialize if key is available
+const stripe = process.env.STRIPE_SECRET_KEY 
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: '2025-07-30.basil',
+      typescript: true,
+    })
+  : null;
 
 export default stripe;
 
@@ -30,6 +37,10 @@ export async function createCheckoutSession({
   successUrl: string;
   cancelUrl: string;
 }) {
+  if (!stripe) {
+    throw new Error('Stripe is not configured. Please add STRIPE_SECRET_KEY environment variable.');
+  }
+
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ['card'],
     billing_address_collection: 'required',
@@ -67,6 +78,10 @@ export async function createCheckoutSession({
 
 // Helper function to retrieve checkout session
 export async function retrieveCheckoutSession(sessionId: string) {
+  if (!stripe) {
+    throw new Error('Stripe is not configured. Please add STRIPE_SECRET_KEY environment variable.');
+  }
+  
   return await stripe.checkout.sessions.retrieve(sessionId, {
     expand: ['payment_intent'],
   });

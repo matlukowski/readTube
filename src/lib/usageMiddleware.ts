@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getOrCreateUser } from '@/lib/user';
-import { getRemainingMinutes } from '@/lib/stripe';
+import { getRemainingMinutes, isStripeEnabled } from '@/lib/stripe';
 import { YouTubeAPI } from '@/lib/youtube';
 
 export interface UsageCheckResult {
@@ -21,6 +21,17 @@ export interface UsageCheckResult {
  */
 export async function checkUsageLimit(youtubeId: string): Promise<UsageCheckResult> {
   try {
+    // If Stripe is not enabled, allow unlimited usage (demo mode)
+    if (!isStripeEnabled()) {
+      console.log('🎯 Demo mode: Stripe not configured, allowing unlimited usage');
+      return {
+        canAnalyze: true,
+        remainingMinutes: 999999, // Unlimited in demo mode
+        requiredMinutes: 0,
+        message: 'Demo mode: unlimited usage available',
+      };
+    }
+
     // Get user from database
     const user = await getOrCreateUser();
     if (!user) {
@@ -97,6 +108,12 @@ export async function logVideoUsage({
   minutesUsed: number;
 }): Promise<boolean> {
   try {
+    // If Stripe is not enabled, skip usage logging (demo mode)
+    if (!isStripeEnabled()) {
+      console.log(`🎯 Demo mode: Skipping usage logging for "${videoTitle}"`);
+      return true; // Return success but don't actually log
+    }
+
     const user = await getOrCreateUser();
     if (!user) {
       console.error('❌ Cannot log usage: user not found');
@@ -140,6 +157,24 @@ export async function logVideoUsage({
  */
 export async function getUserUsageSummary() {
   try {
+    // If Stripe is not enabled, return demo mode values
+    if (!isStripeEnabled()) {
+      return {
+        user: {
+          id: 'demo-user',
+          email: 'demo@readtube.app',
+          subscriptionStatus: 'DEMO',
+        },
+        usage: {
+          minutesUsed: 0,
+          minutesPurchased: 999999, // Unlimited in demo mode
+          remainingMinutes: 999999,
+          canAnalyze: true,
+          percentageUsed: 0,
+        },
+      };
+    }
+
     const user = await getOrCreateUser();
     if (!user) {
       return null;

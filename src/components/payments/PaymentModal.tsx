@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { X, CreditCard, Clock, Zap } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, CreditCard, Clock, Zap, AlertTriangle } from 'lucide-react';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -22,6 +22,33 @@ export default function PaymentModal({
 }: PaymentModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [stripeAvailable, setStripeAvailable] = useState(true);
+
+  useEffect(() => {
+    // Check if Stripe is available by making a test call
+    const checkStripeAvailability = async () => {
+      try {
+        const response = await fetch('/api/stripe/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        
+        if (response.status === 503) {
+          const data = await response.json();
+          if (data.code === 'STRIPE_NOT_CONFIGURED') {
+            setStripeAvailable(false);
+          }
+        }
+      } catch (error) {
+        console.log('Stripe availability check failed:', error);
+        setStripeAvailable(false);
+      }
+    };
+
+    if (isOpen) {
+      checkStripeAvailability();
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -106,6 +133,19 @@ export default function PaymentModal({
             </div>
           )}
 
+          {/* Demo mode notification */}
+          {!stripeAvailable && (
+            <div className="alert alert-warning">
+              <AlertTriangle className="w-5 h-5" />
+              <div>
+                <div className="font-medium">Tryb Demo</div>
+                <div className="text-sm">
+                  System płatności jest obecnie niedostępny. Aplikacja działa w trybie demonstracyjnym.
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Package details */}
           <div className="card bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20">
             <div className="card-body p-4">
@@ -150,10 +190,15 @@ export default function PaymentModal({
           {/* Payment button */}
           <button
             onClick={handlePayment}
-            disabled={loading}
-            className="btn btn-primary w-full"
+            disabled={loading || !stripeAvailable}
+            className={`btn w-full ${!stripeAvailable ? 'btn-disabled' : 'btn-primary'}`}
           >
-            {loading ? (
+            {!stripeAvailable ? (
+              <>
+                <AlertTriangle className="w-4 h-4" />
+                Płatności niedostępne w trybie demo
+              </>
+            ) : loading ? (
               <>
                 <span className="loading loading-spinner loading-sm"></span>
                 Przekierowanie do płatności...

@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { createCheckoutSession } from '@/lib/stripe';
+import { createCheckoutSession, isStripeEnabled } from '@/lib/stripe';
 import { getOrCreateUser } from '@/lib/user';
 
 export async function POST(request: NextRequest) {
   try {
+    // Check if Stripe is enabled
+    if (!isStripeEnabled()) {
+      return NextResponse.json({
+        error: 'Payment system is not available. Stripe is not configured.',
+        code: 'STRIPE_NOT_CONFIGURED'
+      }, { status: 503 });
+    }
+
     const { userId: clerkUserId } = await auth();
     if (!clerkUserId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
