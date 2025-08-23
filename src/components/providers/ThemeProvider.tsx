@@ -9,16 +9,16 @@ interface ThemeProviderProps {
 }
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
-  const [theme, setTheme] = useState('light');
+  const [theme, setTheme] = useState('dark');
   
   useEffect(() => {
-    // Get initial theme from localStorage or default to light
-    const savedTheme = localStorage.getItem('theme') || 'light';
+    // Get initial theme from localStorage or default to dark
+    const savedTheme = localStorage.getItem('theme') || 'dark';
     setTheme(savedTheme);
     
     // Listen for theme changes
     const handleThemeChange = () => {
-      const newTheme = document.documentElement.getAttribute('data-theme') || 'light';
+      const newTheme = document.documentElement.getAttribute('data-theme') || 'dark';
       setTheme(newTheme);
     };
     
@@ -45,7 +45,6 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     <ClerkProvider
       appearance={getClerkAppearance(theme)}
       localization={polishLocalization}
-      unsafe_disableDevelopmentModeWarnings={true}
     >
       {children}
     </ClerkProvider>
