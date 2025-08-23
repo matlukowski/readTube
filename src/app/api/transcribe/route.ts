@@ -4,40 +4,92 @@ import { transcribeRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
 import { checkUsageLimit, logVideoUsage } from '@/lib/usageMiddleware';
 import { YouTubeAPI } from '@/lib/youtube';
-import { YoutubeTranscript } from 'youtube-transcript';
+// @ts-expect-error - no types available for youtube-captions-scraper
+import { getSubtitles } from 'youtube-captions-scraper';
+
+interface Caption {
+  text: string;
+  start?: string;
+  dur?: string;
+}
 
 // Get transcript from YouTube captions (manual or automatic)
 async function getYouTubeTranscript(youtubeId: string): Promise<string | null> {
   try {
     console.log(`🎬 Fetching YouTube captions for ${youtubeId}...`);
     
-    // Try to get transcript - this will automatically try different languages
-    // and both manual and auto-generated captions
-    const transcriptArray = await YoutubeTranscript.fetchTranscript(youtubeId);
+    // Try different languages in order of preference
+    const languages = ['pl', 'en', 'en-US', 'pl-PL', 'auto', 'es', 'de', 'fr'];
     
-    if (!transcriptArray || transcriptArray.length === 0) {
-      console.log(`❌ No captions found for ${youtubeId}`);
-      return null;
+    for (const lang of languages) {
+      try {
+        console.log(`🔍 Trying language: ${lang}`);
+        
+        const captions = await getSubtitles({
+          videoID: youtubeId,
+          lang: lang === 'auto' ? 'en' : lang // fallback for auto
+        }) as Caption[];
+        
+        if (captions && captions.length > 0) {
+          console.log(`✅ Captions found in language: ${lang} (${captions.length} segments)`);
+          
+          // Convert captions to clean text suitable for AI processing
+          const plainText = captions
+            .map((item: Caption) => item.text || '')
+            .join(' ')
+            .replace(/\[.*?\]/g, '')     // Remove [Music], [Applause], etc.
+            .replace(/\(.*?\)/g, '')     // Remove (background noise), etc.
+            .replace(/&amp;/g, '&')     // Decode HTML entities
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/\s+/g, ' ')        // Normalize whitespace
+            .trim();
+          
+          if (plainText.length > 0) {
+            console.log(`✅ YouTube captions extracted: ${plainText.length} characters`);
+            console.log(`📝 Preview: ${plainText.substring(0, 200)}...`);
+            return plainText;
+          }
+        }
+      } catch {
+        console.log(`Language ${lang} not available, trying next...`);
+        continue;
+      }
     }
     
-    // Convert transcript array to clean text suitable for AI processing
-    const plainText = transcriptArray
-      .map(item => item.text)
-      .join(' ')
-      .replace(/\[.*?\]/g, '')     // Remove [Music], [Applause], etc.
-      .replace(/\(.*?\)/g, '')     // Remove (background noise), etc.
-      .replace(/&amp;/g, '&')     // Decode HTML entities
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/\s+/g, ' ')        // Normalize whitespace
-      .trim();
+    // If no language worked, try the old library as fallback
+    console.log(`⚠️ youtube-captions-scraper failed, trying fallback...`);
+    try {
+      const { YoutubeTranscript } = await import('youtube-transcript');
+      const transcriptArray = await YoutubeTranscript.fetchTranscript(youtubeId);
+      
+      if (transcriptArray && transcriptArray.length > 0) {
+        const plainText = transcriptArray
+          .map(item => item.text)
+          .join(' ')
+          .replace(/\[.*?\]/g, '')
+          .replace(/\(.*?\)/g, '')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/\s+/g, ' ')
+          .trim();
+        
+        if (plainText.length > 0) {
+          console.log(`✅ Fallback library success: ${plainText.length} characters`);
+          return plainText;
+        }
+      }
+    } catch (fallbackError) {
+      console.log(`❌ Fallback library also failed:`, fallbackError);
+    }
     
-    console.log(`✅ YouTube captions extracted: ${plainText.length} characters`);
-    console.log(`📝 Preview: ${plainText.substring(0, 200)}...`);
-    
-    return plainText;
+    console.log(`❌ No captions found for ${youtubeId} in any language or method`);
+    return null;
     
   } catch (error) {
     console.error(`❌ YouTube captions extraction failed:`, error);

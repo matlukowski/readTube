@@ -31,6 +31,7 @@
     "stripe": "^18.4.0",
     "svix": "^1.73.0",
     "tailwind-merge": "^3.3.1",
+    "youtube-captions-scraper": "^2.0.3",
     "youtube-dl-exec": "^3.0.24",
     "youtube-transcript": "^1.2.1",
     "ytdl-core": "^4.11.5",
