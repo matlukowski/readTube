@@ -33,7 +33,10 @@ async function checkRateLimit(userId: string): Promise<boolean> {
 
 // Download audio from YouTube using ytdl-core
 async function downloadAudioWithYtdlCore(youtubeId: string): Promise<string> {
-  const tempDir = path.join(process.cwd(), 'temp');
+  // Use /tmp on Vercel (only writable directory), local temp folder for development
+  const tempDir = process.env.VERCEL 
+    ? '/tmp' 
+    : path.join(process.cwd(), 'temp');
   const audioPath = path.join(tempDir, `${youtubeId}.webm`);
   
   // Create temp directory if it doesn't exist
