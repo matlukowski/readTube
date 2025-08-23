@@ -34,10 +34,10 @@ export class AIService {
           { role: 'user', content: userPrompt },
         ],
         max_completion_tokens: 128000,
-        temperature: 1,
+        temperature: 1.0, // Default value required by gpt-5-nano
       });
 
-      return response.choices[0]?.message?.content || 'Failed to generate summary';
+      return response.choices[0]?.message?.content?.trim() || 'Failed to generate summary';
     } catch (error) {
       console.error('OpenAI summarization error:', error);
       throw new Error('Failed to summarize transcript');
@@ -135,39 +135,54 @@ export class AIService {
     }
   }
 
+
   private getSystemPrompt(style: SummarizationOptions['style'], language: string = 'pl'): string {
     const baseInstructions = language === 'pl' ? `
-      Napisz ZWIĘZŁE, ale KOMPLETNE podsumowanie w pierwszej osobie, jakby to były Twoje własne myśli.
-      
-      STRATEGIA SELEKCJI TREŚCI:
-      1. Wybierz 3-5 najważniejszych tematów/myśli z całej wypowiedzi
-      2. Każdy temat przedstaw w 2-3 zdaniach maksymalnie
-      3. Zachowaj konkretne przykłady i liczby, ale skróć je o 70%
-      4. Pomiń powtórzenia, dygresje i wypełniacze
-      5. Skup się na praktycznych wnioskach i actionable insights
-      
+      Tworzysz zwięzłe, ale angażujące podsumowania filmów z YouTube. Pisz jak doświadczony dziennikarz, który potrafi przekazać główne treści w przystępny sposób.
+
       STYL PISANIA:
-      6. Używaj pierwszej osoby - "myślę", "uważam", "w mojej praktyce"
-      7. Utrzymaj naturalny, konwersacyjny ton autora
-      8. Maksymalna gęstość informacji - każde zdanie musi być wartościowe
-      9. Logiczne grupowanie podobnych myśli w paragrafach
-      10. Nie tłumacz się z długością - skup się na jakości treści
+      1. Pisz naturalnie, jakbyś opowiadał znajomemu o ciekawym filmie
+      2. Unikaj sztywnych, powtarzających się zwrotów jak "omawiane jest", "przedstawiane jest", "film opisuje"
+      3. Każdy akapit zacznij inaczej - używaj nazwy tematu, ciekawego faktu, pytania lub bezpośrednio głównej informacji
+      4. Preferuj stronę czynną zamiast biernej ("Autor pokazuje" zamiast "pokazywane jest")
+      5. Łącz zdania płynnymi przejściami, unikaj mechanicznego wyliczania
+
+      STRUKTURA:
+      1. Zacznij od najbardziej intrygującego aspektu z filmu
+      2. Przedstaw główne tezy/punkty w logicznej kolejności
+      3. Zakończ kluczowymi wnioskami lub praktycznymi informacjami
+
+      PRZYKŁADY DOBRYCH POCZĄTKÓW:
+      - "[Nazwa tematu] to..."
+      - "Główną tezą filmu jest..."
+      - "[Konkretny fakt/liczba] pokazuje..."
+      - "Według autora..."
+
+      DŁUGOŚĆ: około 500-800 słów
+      CEL: Sprawić, żeby czytelnik zrozumiał o czym był film, nawet go nie oglądając.
     ` : `
-      Write a CONCISE but COMPLETE summary in first person, as if these were your own thoughts.
-      
-      CONTENT SELECTION STRATEGY:
-      1. Choose 3-5 most important topics/thoughts from the entire speech
-      2. Present each topic in 2-3 sentences maximum
-      3. Keep concrete examples and numbers, but shorten them by 70%
-      4. Skip repetitions, digressions and fillers
-      5. Focus on practical conclusions and actionable insights
-      
+      You create concise but engaging YouTube video summaries. Write like an experienced journalist who can convey main content in an accessible way.
+
       WRITING STYLE:
-      6. Use first person - "I think", "I believe", "in my practice"
-      7. Maintain author's natural, conversational tone
-      8. Maximum information density - every sentence must be valuable
-      9. Logical grouping of similar thoughts in paragraphs
-      10. Don't apologize for brevity - focus on content quality
+      1. Write naturally, as if telling a friend about an interesting video
+      2. Avoid stiff, repetitive phrases like "it is discussed", "it is presented", "the video describes"
+      3. Start each paragraph differently - use topic names, interesting facts, questions, or direct main information
+      4. Prefer active voice over passive ("The author shows" instead of "it is shown")
+      5. Connect sentences with smooth transitions, avoid mechanical listing
+
+      STRUCTURE:
+      1. Start with the most intriguing aspect from the video
+      2. Present main theses/points in logical order
+      3. End with key conclusions or practical information
+
+      EXAMPLES OF GOOD BEGINNINGS:
+      - "[Topic name] is..."
+      - "The main thesis of the video is..."
+      - "[Specific fact/number] shows..."
+      - "According to the author..."
+
+      LENGTH: about 500-800 words
+      GOAL: Make the reader understand what the video was about without watching it.
     `;
 
     switch (style) {

@@ -55,6 +55,7 @@ export default function LibraryPage() {
     }
   }, [isSignedIn, router]);
 
+
   // Load library videos
   const loadVideos = async (page: number = 1, search: string = '') => {
     setLoading(true);
@@ -149,6 +150,7 @@ export default function LibraryPage() {
       setDeletingVideo('');
     }
   };
+
 
   if (!isSignedIn) {
     return null; // Will redirect to sign-in
@@ -437,7 +439,7 @@ export default function LibraryPage() {
                       {/* Footer with paraphrase information */}
                       <div className="mt-6 pt-4 border-t border-base-300">
                         <p className="text-xs text-base-content/60 leading-relaxed">
-                          💡 <strong>Informacja:</strong> Powyższy tekst to skrócona parafraza słów autora filmu. 
+                          💡 <strong>Informacja:</strong> Powyższy tekst to parafraza słów autora filmu. 
                           Aby zapoznać się w pełni z treścią, obejrzyj oryginalny film klikając przycisk{' '}
                           <span className="font-medium">"YouTube"</span> pod miniaturką.
                         </p>

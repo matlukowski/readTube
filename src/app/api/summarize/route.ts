@@ -23,10 +23,19 @@ export async function POST(request: NextRequest) {
       });
 
       if (existingVideo?.summary) {
-        return NextResponse.json({ 
-          summary: existingVideo.summary,
-          cached: true 
-        });
+        try {
+          const parsed = JSON.parse(existingVideo.summary);
+          return NextResponse.json({ 
+            summary: parsed.summary || existingVideo.summary,
+            generatedAt: parsed.generatedAt,
+            cached: true 
+          });
+        } catch {
+          return NextResponse.json({ 
+            summary: existingVideo.summary,
+            cached: true 
+          });
+        }
       }
     }
 

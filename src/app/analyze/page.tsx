@@ -218,6 +218,7 @@ function AnalyzeContent() {
     router.push('/analyze');
   };
 
+
   return (
     <div className="min-h-screen bg-base-200">
       <Header />
@@ -421,7 +422,7 @@ function AnalyzeContent() {
                     {/* Footer with paraphrase information */}
                     <div className="mt-6 pt-4 border-t border-base-300">
                       <p className="text-xs text-base-content/60 leading-relaxed">
-                        💡 <strong>Informacja:</strong> Powyższy tekst to skrócona parafraza słów autora filmu. 
+                        💡 <strong>Informacja:</strong> Powyższy tekst to parafraza słów autora filmu. 
                         Aby zapoznać się w pełni z treścią, obejrzyj oryginalny film klikając przycisk{' '}
                         <span className="font-medium">"YouTube"</span> pod miniaturką.
                       </p>

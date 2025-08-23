@@ -30,7 +30,7 @@ export default function HomePage() {
           {!isSignedIn && (
             <div className="mt-6">
               <Link href="/sign-in" className="btn btn-primary btn-lg">
-                Get Started Free
+                Rozpocznij za darmo
               </Link>
             </div>
           )}
@@ -51,9 +51,9 @@ export default function HomePage() {
           <div className="card bg-base-100 shadow-xl">
             <div className="card-body">
               <Brain className="w-12 h-12 text-secondary mb-4" />
-              <h3 className="card-title">AI Summaries</h3>
+              <h3 className="card-title">Podsumowania AI</h3>
               <p className="text-base-content/70">
-                Get instant AI-generated summaries of video content in multiple formats
+                Otrzymaj inteligentne podsumowania treści filmów wygenerowane przez AI
               </p>
             </div>
           </div>
@@ -61,9 +61,9 @@ export default function HomePage() {
           <div className="card bg-base-100 shadow-xl">
             <div className="card-body">
               <Sparkles className="w-12 h-12 text-accent mb-4" />
-              <h3 className="card-title">Auto Transcription</h3>
+              <h3 className="card-title">Automatyczna transkrypcja</h3>
               <p className="text-base-content/70">
-                Automatically fetch and store video transcripts for easy reference
+                Automatyczne generowanie transkrypcji filmów z użyciem nowoczesnej technologii AI
               </p>
             </div>
           </div>
@@ -130,7 +130,7 @@ export default function HomePage() {
                 <h2 className="card-title text-2xl justify-center">
                   Gotowy na odkrycie wiedzy z YouTube?
                 </h2>
-                <p>Dołącz do tysięcy użytkowników analizujących filmy z AI</p>
+                <p>Zacznij analizować filmy YouTube z pomocą sztucznej inteligencji</p>
                 <div className="card-actions justify-center mt-4">
                   <Link href="/sign-up" className="btn btn-secondary btn-lg">
                     Rozpocznij za darmo

@@ -127,18 +127,6 @@ export default function AnalyzeBar({ onAnalyze, className = '' }: AnalyzeBarProp
         </div>
       )}
 
-      {/* Help text */}
-      <div className="mt-4 text-sm text-base-content/60">
-        <p className="mb-2">
-          <strong>Obsługiwane formaty:</strong>
-        </p>
-        <ul className="list-disc list-inside space-y-1 ml-4">
-          <li>https://www.youtube.com/watch?v=VIDEO_ID</li>
-          <li>https://youtu.be/VIDEO_ID</li>
-          <li>https://www.youtube.com/embed/VIDEO_ID</li>
-          <li>VIDEO_ID (samo ID filmu)</li>
-        </ul>
-      </div>
     </div>
   );
 }

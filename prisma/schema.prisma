@@ -50,7 +50,7 @@ model Video {
   description  String?  @db.Text
   thumbnail    String
   transcript   String?  @db.Text // Raw transcript
-  summary      String?  @db.Text // AI-processed summary
+  summary      String?  @db.Text // AI-processed summary (contains both concise and detailed in JSON format)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   
