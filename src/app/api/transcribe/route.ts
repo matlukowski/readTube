@@ -258,7 +258,7 @@ async function transcribeWithGladia(audioPath: string): Promise<string> {
         } else if (result.result?.transcription?.utterances) {
           // Fallback to utterances if full_transcript not available
           return result.result.transcription.utterances
-            .map((u: any) => u.text)
+            .map((u: { text: string }) => u.text)
             .join(' ');
         }
         

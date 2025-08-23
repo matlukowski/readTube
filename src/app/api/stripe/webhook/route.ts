@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import Stripe from 'stripe';
-import stripe, { retrieveCheckoutSession } from '@/lib/stripe';
+import stripe from '@/lib/stripe';
 import { prisma } from '@/lib/prisma';
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET!;

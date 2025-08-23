@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { X, CreditCard, Clock, Zap } from 'lucide-react';
-import { loadStripe } from '@stripe/stripe-js';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -14,9 +13,6 @@ interface PaymentModalProps {
   };
   requiredMinutes?: number;
 }
-
-// Initialize Stripe
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
 
 export default function PaymentModal({ 
   isOpen, 

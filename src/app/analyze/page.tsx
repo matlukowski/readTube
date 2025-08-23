@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import Image from 'next/image';
-import { ArrowLeft, Clock, Eye, BookOpen, Save, ExternalLink, AlertCircle, CheckCircle, CreditCard } from 'lucide-react';
+import { ArrowLeft, Clock, Eye, BookOpen, Save, ExternalLink, AlertCircle, CheckCircle } from 'lucide-react';
 import AnalyzeBar from '@/components/analyze/AnalyzeBar';
 import Header from '@/components/layout/Header';
 import PaymentModal from '@/components/payments/PaymentModal';
@@ -44,7 +44,11 @@ function AnalyzeContent() {
   const [hasInitialized, setHasInitialized] = useState(false);
   const [language, setLanguage] = useState('pl');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [usageInfo, setUsageInfo] = useState<any>(null);
+  const [usageInfo, setUsageInfo] = useState<{
+    remainingMinutes: number;
+    requiredMinutes: number;
+    subscriptionStatus: string;
+  } | null>(null);
   const isAnalyzingRef = useRef(false);
 
   // Get language from localStorage
@@ -437,7 +441,7 @@ function AnalyzeContent() {
                       <p className="text-xs text-base-content/60 leading-relaxed">
                         💡 <strong>Informacja:</strong> Powyższy tekst to parafraza słów autora filmu. 
                         Aby zapoznać się w pełni z treścią, obejrzyj oryginalny film klikając przycisk{' '}
-                        <span className="font-medium">"YouTube"</span> pod miniaturką.
+                        <span className="font-medium">{'"YouTube"'}</span> pod miniaturką.
                       </p>
                     </div>
                   </div>

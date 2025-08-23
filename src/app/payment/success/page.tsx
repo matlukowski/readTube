@@ -6,11 +6,15 @@ import { CheckCircle, ArrowLeft, Clock } from 'lucide-react';
 import Header from '@/components/layout/Header';
 import Link from 'next/link';
 
+interface SessionInfo {
+  sessionId: string;
+  // Add more fields as needed
+}
+
 function PaymentSuccessContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [sessionInfo, setSessionInfo] = useState<any>(null);
 
   useEffect(() => {
     const sessionId = searchParams.get('session_id');

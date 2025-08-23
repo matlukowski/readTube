@@ -441,7 +441,7 @@ export default function LibraryPage() {
                         <p className="text-xs text-base-content/60 leading-relaxed">
                           💡 <strong>Informacja:</strong> Powyższy tekst to parafraza słów autora filmu. 
                           Aby zapoznać się w pełni z treścią, obejrzyj oryginalny film klikając przycisk{' '}
-                          <span className="font-medium">"YouTube"</span> pod miniaturką.
+                          <span className="font-medium">{'"YouTube"'}</span> pod miniaturką.
                         </p>
                       </div>
                     </div>

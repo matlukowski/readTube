@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getOrCreateUser } from '@/lib/user';
-import { hasEnoughMinutes, getRemainingMinutes } from '@/lib/stripe';
+import { getRemainingMinutes } from '@/lib/stripe';
 import { YouTubeAPI } from '@/lib/youtube';
 
 export interface UsageCheckResult {

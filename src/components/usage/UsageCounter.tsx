@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { Clock, Zap } from 'lucide-react';
-import { formatMinutesToTime } from '@/lib/stripe';
 
 interface UsageData {
   minutesUsed: number;
