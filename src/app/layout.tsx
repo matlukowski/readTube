@@ -1,15 +1,14 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import {
-  ClerkProvider,
-} from "@clerk/nextjs";
+import { ClerkProvider } from "@clerk/nextjs";
+import { ThemeProvider } from "@/components/providers/ThemeProvider";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "YouTube Knowledge Search",
-  description: "Search and extract knowledge from YouTube videos with AI-powered summaries",
+  title: "ReadTube - Analizuj filmy YouTube z AI",
+  description: "ReadTube - Zamieniaj filmy YouTube w zwięzłe podsumowania AI. Analizuj, transkrybuj i zapisuj najważniejsze treści w swojej bibliotece.",
 };
 
 export default function RootLayout({
@@ -18,12 +17,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
-      <html lang="en" data-theme="light">
-        <body className={inter.className}>
+    <html lang="en" data-theme="light">
+      <body className={inter.className}>
+        <ThemeProvider>
           {children}
-        </body>
-      </html>
-    </ClerkProvider>
+        </ThemeProvider>
+      </body>
+    </html>
   );
 }

@@ -4,7 +4,7 @@ import { useUser } from '@clerk/nextjs';
 import Link from 'next/link';
 import AnalyzeBar from '@/components/analyze/AnalyzeBar';
 import Header from '@/components/layout/Header';
-import { Play, Brain, Sparkles, Users } from 'lucide-react';
+import { Play, Brain, Sparkles, Users, Youtube } from 'lucide-react';
 
 export default function HomePage() {
   const { isSignedIn } = useUser();
@@ -16,9 +16,13 @@ export default function HomePage() {
       <main className="container mx-auto px-4 py-12">
         {/* Hero Section */}
         <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold mb-4">
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <Youtube className="w-12 h-12 text-red-500" />
+            <h1 className="text-6xl font-bold">ReadTube</h1>
+          </div>
+          <h2 className="text-3xl font-bold mb-4">
             Analizuj filmy YouTube z AI
-          </h1>
+          </h2>
           <p className="text-xl text-base-content/70 mb-8">
             Wklej link do filmu YouTube i otrzymaj szczegółowe podsumowanie AI
           </p>

@@ -191,6 +191,39 @@ export class YouTubeAPI {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   }
 
+  // Convert ISO 8601 duration to minutes for usage tracking
+  parseDurationToMinutes(isoDuration: string): number {
+    const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    if (!match) return 0;
+
+    const hours = match[1] ? parseInt(match[1]) : 0;
+    const minutes = match[2] ? parseInt(match[2]) : 0;
+    const seconds = match[3] ? parseInt(match[3]) : 0;
+
+    // Convert everything to minutes, round up seconds
+    const totalMinutes = hours * 60 + minutes + Math.ceil(seconds / 60);
+    return totalMinutes;
+  }
+
+  // Convert formatted duration string (e.g., "1:23:45" or "23:45") to minutes
+  static parseDurationStringToMinutes(durationString: string): number {
+    if (!durationString) return 0;
+    
+    const parts = durationString.split(':').map(part => parseInt(part));
+    
+    if (parts.length === 3) {
+      // Format: H:MM:SS
+      const [hours, minutes, seconds] = parts;
+      return hours * 60 + minutes + Math.ceil(seconds / 60);
+    } else if (parts.length === 2) {
+      // Format: MM:SS
+      const [minutes, seconds] = parts;
+      return minutes + Math.ceil(seconds / 60);
+    }
+    
+    return 0;
+  }
+
   formatViewCount(count: string): string {
     const num = parseInt(count);
     if (num >= 1000000) {

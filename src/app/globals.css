@@ -1,2 +1,142 @@
 @import "tailwindcss";
 @plugin "daisyui";
+
+/* Clerk UserButton Dropdown Styling */
+
+/* UserButton Popover Container - all possible selectors */
+.cl-userButtonPopover,
+.cl-userButtonPopoverCard,
+[data-clerk-portal],
+[data-portal] > div,
+.cl-popoverContent {
+  background-color: hsl(var(--b1)) !important;
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1) !important;
+  border: 1px solid hsl(var(--b3)) !important;
+  border-radius: 0.75rem !important;
+  backdrop-filter: blur(8px) !important;
+  min-width: 200px !important;
+}
+
+/* Dark theme shadow override */
+[data-theme="dark"] .cl-userButtonPopover,
+[data-theme="dark"] .cl-userButtonPopoverCard,
+[data-theme="dark"] [data-clerk-portal],
+[data-theme="dark"] [data-portal] > div,
+[data-theme="dark"] .cl-popoverContent {
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.4), 0 8px 10px -6px rgb(0 0 0 / 0.4) !important;
+}
+
+/* UserButton Actions Container */
+.cl-userButtonPopoverActions,
+.cl-menuList,
+.cl-popoverMain {
+  background-color: hsl(var(--b1)) !important;
+  padding: 0.5rem !important;
+}
+
+/* Individual Menu Items */
+.cl-userButtonPopoverActionButton,
+.cl-menuItem,
+.cl-popoverActionButton {
+  background-color: transparent !important;
+  color: hsl(var(--bc)) !important;
+  padding: 0.75rem 1rem !important;
+  border-radius: 0.5rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 400 !important;
+  transition: background-color 0.2s ease !important;
+  border: none !important;
+  width: 100% !important;
+  text-align: left !important;
+}
+
+.cl-userButtonPopoverActionButton:hover,
+.cl-menuItem:hover,
+.cl-popoverActionButton:hover {
+  background-color: hsl(var(--b2)) !important;
+  color: hsl(var(--bc)) !important;
+}
+
+.cl-userButtonPopoverActionButton:focus,
+.cl-menuItem:focus,
+.cl-popoverActionButton:focus {
+  background-color: hsl(var(--b2)) !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Icons in menu items */
+.cl-userButtonPopoverActionButtonIcon,
+.cl-menuItemIcon {
+  color: hsl(var(--bc) / 0.6) !important;
+  width: 1rem !important;
+  height: 1rem !important;
+}
+
+/* Text in menu items */
+.cl-userButtonPopoverActionButtonText,
+.cl-menuItemText {
+  color: hsl(var(--bc)) !important;
+  font-size: 0.875rem !important;
+}
+
+/* User Preview Section */
+.cl-userPreview,
+.cl-userButtonPopoverHeader,
+.cl-userPreviewTextContainer {
+  background-color: hsl(var(--b1)) !important;
+  padding: 0.75rem 1rem !important;
+  border-bottom: 1px solid hsl(var(--b3)) !important;
+}
+
+.cl-userPreviewMainIdentifier,
+.cl-userButtonPopoverMainIdentifier {
+  color: hsl(var(--bc)) !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+}
+
+.cl-userPreviewSecondaryIdentifier,
+.cl-userButtonPopoverSecondaryIdentifier {
+  color: hsl(var(--bc) / 0.7) !important;
+  font-size: 0.75rem !important;
+}
+
+/* Footer Section */
+.cl-userButtonPopoverFooter,
+.cl-popoverFooter {
+  background-color: hsl(var(--b1)) !important;
+  border-top: 1px solid hsl(var(--b3)) !important;
+  padding: 0.75rem 1rem !important;
+}
+
+/* Avatar styling */
+.cl-userButtonAvatarBox,
+.cl-avatarBox {
+  border: 2px solid hsl(var(--b3)) !important;
+  background-color: hsl(var(--b1)) !important;
+  border-radius: 50% !important;
+}
+
+/* Generic Clerk portals and modals */
+[data-clerk-portal] {
+  z-index: 9999 !important;
+}
+
+/* Catch-all for any remaining transparent elements */
+[class*="cl-"] [class*="popover"],
+[class*="cl-"] [class*="dropdown"],
+[class*="cl-"] [class*="menu"] {
+  background-color: hsl(var(--b1)) !important;
+}
+
+/* Override any inline styles that might cause transparency */
+[style*="transparent"]:is([class*="cl-"]) {
+  background-color: hsl(var(--b1)) !important;
+}
+
+/* Ensure proper layering */
+.cl-userButton {
+  position: relative !important;
+  z-index: 10 !important;
+}

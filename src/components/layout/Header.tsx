@@ -4,6 +4,7 @@ import { UserButton, useUser } from '@clerk/nextjs';
 import Link from 'next/link';
 import { Youtube, Moon, Sun, Languages } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import UsageCounter from '@/components/usage/UsageCounter';
 
 export default function Header() {
   const { isSignedIn } = useUser();
@@ -38,7 +39,7 @@ export default function Header() {
       <div className="navbar-start">
         <Link href="/" className="btn btn-ghost normal-case text-xl">
           <Youtube className="w-6 h-6 text-red-500" />
-          <span className="ml-2">YT Knowledge</span>
+          <span className="ml-2 font-bold">ReadTube</span>
         </Link>
       </div>
       
@@ -54,6 +55,9 @@ export default function Header() {
       </div>
       
       <div className="navbar-end gap-2">
+        {/* Usage Counter - only for signed in users */}
+        {isSignedIn && <UsageCounter />}
+        
         {/* Language Selector */}
         <div className="dropdown dropdown-end">
           <div tabIndex={0} role="button" className="btn btn-ghost" title="Change Language">
@@ -87,10 +91,14 @@ export default function Header() {
         
         {/* User Authentication */}
         {isSignedIn ? (
-          <UserButton afterSignOutUrl="/" />
+          <UserButton 
+            afterSignOutUrl="/"
+            userProfileMode="navigation"
+            userProfileUrl="/user-profile"
+          />
         ) : (
           <Link href="/sign-in" className="btn btn-primary btn-sm">
-            Sign In
+            Zaloguj się
           </Link>
         )}
       </div>

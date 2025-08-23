@@ -12,16 +12,24 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  clerkId   String   @unique
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  clerkId            String   @unique
+  email              String   @unique
+  name               String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  
+  // Usage tracking for payment system
+  minutesUsed        Int      @default(0)      // Total minutes of analyzed videos
+  minutesPurchased   Int      @default(60)     // Available minutes (60 minutes = 1 hour free)
+  subscriptionStatus String   @default("FREE") // FREE or PAID
+  lastPurchaseAt     DateTime?                 // Last time user bought minutes
   
   searches  Search[]
   favorites Favorite[]
-  videos    Video[]  // User's library videos
+  videos    Video[]     // User's library videos
+  payments  Payment[]   // User's payment history
+  usageLogs UsageLog[]  // Detailed usage tracking
   
   @@map("users")
 }
@@ -71,4 +79,35 @@ model Favorite {
   
   @@unique([userId, videoId])
   @@map("favorites")
+}
+
+model Payment {
+  id               String   @id @default(cuid())
+  userId           String
+  stripeSessionId  String   @unique  // Stripe checkout session ID
+  stripePaymentId  String?           // Stripe payment intent ID (after successful payment)
+  amount           Int               // Amount in grosze (2500 = 25.00 PLN)
+  currency         String   @default("pln")
+  status           String            // pending, completed, failed, cancelled
+  minutesPurchased Int               // How many minutes were purchased (300 = 5 hours)
+  createdAt        DateTime @default(now())
+  completedAt      DateTime?         // When payment was completed
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("payments")
+}
+
+model UsageLog {
+  id            String   @id @default(cuid())
+  userId        String
+  youtubeId     String
+  videoTitle    String
+  videoDuration String            // Original duration string (e.g., "1:23:45")
+  minutesUsed   Int               // Duration converted to minutes
+  createdAt     DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("usage_logs")
 }

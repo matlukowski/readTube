@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { transcribeRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
+import { checkUsageLimit, logVideoUsage } from '@/lib/usageMiddleware';
+import { YouTubeAPI } from '@/lib/youtube';
 import fs from 'fs';
 import path from 'path';
 import ytdl from '@distube/ytdl-core';
@@ -317,6 +319,24 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { youtubeId } = transcribeRequestSchema.parse(body);
 
+    // 🛡️ Check usage limits BEFORE proceeding with transcription
+    console.log(`🔍 Checking usage limits for video ${youtubeId}`);
+    const usageCheck = await checkUsageLimit(youtubeId);
+    
+    if (!usageCheck.canAnalyze) {
+      return NextResponse.json({
+        error: usageCheck.message,
+        usageInfo: {
+          remainingMinutes: usageCheck.remainingMinutes,
+          requiredMinutes: usageCheck.requiredMinutes,
+          subscriptionStatus: usageCheck.user?.subscriptionStatus,
+        },
+        upgradeRequired: true
+      }, { status: 402 }); // Payment Required
+    }
+
+    console.log(`✅ Usage check passed. User can analyze this ${usageCheck.requiredMinutes}-minute video`);
+
     // Check if transcript already exists in database with cache validation
     const existingVideo = await prisma.video.findUnique({
       where: { youtubeId },
@@ -357,23 +377,54 @@ export async function POST(request: NextRequest) {
     
     console.log(`📊 Transcript extracted: ${transcript.length} characters`);
 
+    // Get video details for usage logging
+    const youtubeAPI = new YouTubeAPI(process.env.YOUTUBE_API_KEY!);
+    let videoDetails;
+    try {
+      videoDetails = await youtubeAPI.getVideoDetails(youtubeId);
+    } catch (error) {
+      console.warn('⚠️ Could not fetch video details for usage logging:', error);
+      videoDetails = {
+        snippet: { title: 'Unknown Title' },
+        contentDetails: { duration: 'PT0S' }
+      };
+    }
+
     // Save transcript to database
     await prisma.video.upsert({
       where: { youtubeId },
       update: { transcript },
       create: {
         youtubeId,
-        title: 'Pending',
+        title: videoDetails.snippet.title || 'Pending',
         channelName: 'Pending',
         thumbnail: '',
         transcript,
       },
     });
 
+    // 📊 Log usage AFTER successful transcription
+    const minutesUsed = usageCheck.requiredMinutes || youtubeAPI.parseDurationToMinutes(videoDetails.contentDetails.duration);
+    const videoDuration = youtubeAPI.formatDuration(videoDetails.contentDetails.duration);
+    
+    await logVideoUsage({
+      youtubeId,
+      videoTitle: videoDetails.snippet.title || 'Unknown Title',
+      videoDuration,
+      minutesUsed
+    });
+
+    console.log(`✅ Transcription completed and ${minutesUsed} minutes logged for user`);
+
     return NextResponse.json({ 
       transcript,
       cached: false,
-      source: 'gladia'
+      source: 'gladia',
+      usageInfo: {
+        minutesUsed,
+        videoDuration,
+        remainingMinutes: usageCheck.remainingMinutes - minutesUsed
+      }
     });
     
   } catch (error) {

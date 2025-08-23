@@ -4,9 +4,10 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import Image from 'next/image';
-import { ArrowLeft, Clock, Eye, BookOpen, Save, ExternalLink, AlertCircle, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Clock, Eye, BookOpen, Save, ExternalLink, AlertCircle, CheckCircle, CreditCard } from 'lucide-react';
 import AnalyzeBar from '@/components/analyze/AnalyzeBar';
 import Header from '@/components/layout/Header';
+import PaymentModal from '@/components/payments/PaymentModal';
 import { extractYouTubeId } from '@/components/analyze/AnalyzeBar';
 
 interface VideoDetails {
@@ -42,6 +43,8 @@ function AnalyzeContent() {
   }[]>([]);
   const [hasInitialized, setHasInitialized] = useState(false);
   const [language, setLanguage] = useState('pl');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [usageInfo, setUsageInfo] = useState<any>(null);
   const isAnalyzingRef = useRef(false);
 
   // Get language from localStorage
@@ -137,6 +140,16 @@ function AnalyzeContent() {
 
       if (!transcriptResponse.ok) {
         const errorData = await transcriptResponse.json();
+        
+        // Check if this is a usage limit error (402 Payment Required)
+        if (transcriptResponse.status === 402 && errorData.upgradeRequired) {
+          console.log('💳 Usage limit exceeded, showing payment modal');
+          setUsageInfo(errorData.usageInfo);
+          setShowPaymentModal(true);
+          setCurrentStep('input'); // Return to input step
+          return; // Don't throw error, just show payment modal
+        }
+        
         throw new Error(errorData.error || 'Nie udało się wygenerować transkrypcji');
       }
 
@@ -442,6 +455,14 @@ function AnalyzeContent() {
           </div>
         )}
       </main>
+
+      {/* Payment Modal */}
+      <PaymentModal
+        isOpen={showPaymentModal}
+        onClose={() => setShowPaymentModal(false)}
+        userUsage={usageInfo}
+        requiredMinutes={usageInfo?.requiredMinutes}
+      />
     </div>
   );
 }
