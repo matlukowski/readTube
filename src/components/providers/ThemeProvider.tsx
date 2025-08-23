@@ -45,6 +45,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     <ClerkProvider
       appearance={getClerkAppearance(theme)}
       localization={polishLocalization}
+      unsafe_disableDevelopmentModeWarnings={true}
     >
       {children}
     </ClerkProvider>
