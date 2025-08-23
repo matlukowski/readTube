@@ -34,7 +34,7 @@ export async function checkUsageLimit(youtubeId: string): Promise<UsageCheckResu
     // Get video duration from YouTube API
     const youtubeAPI = new YouTubeAPI(process.env.YOUTUBE_API_KEY!);
     const videoData = await youtubeAPI.getVideoDetails(youtubeId);
-    const requiredMinutes = youtubeAPI.parseDurationToMinutes(videoData.contentDetails.duration);
+    const requiredMinutes = videoData.contentDetails?.duration ? youtubeAPI.parseDurationToMinutes(videoData.contentDetails.duration) : 0;
 
     console.log(`🔍 Usage check for user ${user.id}: needs ${requiredMinutes} minutes, used ${user.minutesUsed}/${user.minutesPurchased}`);
 

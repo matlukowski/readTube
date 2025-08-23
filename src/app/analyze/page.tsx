@@ -9,6 +9,7 @@ import AnalyzeBar from '@/components/analyze/AnalyzeBar';
 import Header from '@/components/layout/Header';
 import PaymentModal from '@/components/payments/PaymentModal';
 import { extractYouTubeId } from '@/components/analyze/AnalyzeBar';
+import { formatMinutesToTime } from '@/lib/stripe';
 
 interface VideoDetails {
   youtubeId: string;
@@ -48,6 +49,7 @@ function AnalyzeContent() {
     remainingMinutes: number;
     requiredMinutes: number;
     subscriptionStatus: string;
+    formattedRemaining: string;
   } | null>(null);
   const isAnalyzingRef = useRef(false);
 
@@ -148,7 +150,10 @@ function AnalyzeContent() {
         // Check if this is a usage limit error (402 Payment Required)
         if (transcriptResponse.status === 402 && errorData.upgradeRequired) {
           console.log('💳 Usage limit exceeded, showing payment modal');
-          setUsageInfo(errorData.usageInfo);
+          setUsageInfo({
+            ...errorData.usageInfo,
+            formattedRemaining: formatMinutesToTime(errorData.usageInfo.remainingMinutes)
+          });
           setShowPaymentModal(true);
           setCurrentStep('input'); // Return to input step
           return; // Don't throw error, just show payment modal
@@ -464,7 +469,7 @@ function AnalyzeContent() {
       <PaymentModal
         isOpen={showPaymentModal}
         onClose={() => setShowPaymentModal(false)}
-        userUsage={usageInfo}
+        userUsage={usageInfo || undefined}
         requiredMinutes={usageInfo?.requiredMinutes}
       />
     </div>

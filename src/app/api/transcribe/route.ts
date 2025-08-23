@@ -404,8 +404,8 @@ export async function POST(request: NextRequest) {
     });
 
     // 📊 Log usage AFTER successful transcription
-    const minutesUsed = usageCheck.requiredMinutes || youtubeAPI.parseDurationToMinutes(videoDetails.contentDetails.duration);
-    const videoDuration = youtubeAPI.formatDuration(videoDetails.contentDetails.duration);
+    const minutesUsed = usageCheck.requiredMinutes || (videoDetails.contentDetails?.duration ? youtubeAPI.parseDurationToMinutes(videoDetails.contentDetails.duration) : 0);
+    const videoDuration = videoDetails.contentDetails?.duration ? youtubeAPI.formatDuration(videoDetails.contentDetails.duration) : 'Unknown';
     
     await logVideoUsage({
       youtubeId,
