@@ -47,8 +47,19 @@ export default function UsageCounter() {
     return null;
   }
 
+  // App is now completely free - show unlimited access
+  if (usage.hasUnlimitedAccess || usage.minutesPurchased >= 999999) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 text-primary rounded-lg">
+        <Zap className="w-4 h-4" />
+        <span className="text-sm font-medium">Bez limitu</span>
+        <span className="text-xs text-primary/70">Darmowa</span>
+      </div>
+    );
+  }
+
   const percentageUsed = Math.round((usage.minutesUsed / usage.minutesPurchased) * 100);
-  const isLowOnTime = usage.remainingMinutes < 30; // Less than 30 minutes left
+  const isLowOnTime = usage.remainingMinutes < 30;
   const isOutOfTime = usage.remainingMinutes === 0;
 
   return (
@@ -60,12 +71,7 @@ export default function UsageCounter() {
           : 'bg-base-200'
     }`}>
       <div className="flex items-center gap-1">
-        {usage.subscriptionStatus === 'FREE' ? (
-          <Clock className="w-4 h-4" />
-        ) : (
-          <Zap className="w-4 h-4" />
-        )}
-        
+        <Clock className="w-4 h-4" />
         <span className="text-sm font-medium">
           {usage.formattedRemaining}
         </span>
@@ -86,23 +92,8 @@ export default function UsageCounter() {
           />
         </div>
         
-        <span className="text-xs text-base-content/60">
-          {usage.subscriptionStatus === 'FREE' ? 'Free' : 'Paid'}
-        </span>
+        <span className="text-xs text-base-content/60">Free</span>
       </div>
-
-      {/* Warning tooltip for low time */}
-      {isLowOnTime && (
-        <div className="tooltip tooltip-bottom" data-tip={
-          isOutOfTime 
-            ? "Wykup pakiet 5h za 25 zł aby kontynuować" 
-            : "Zostało mało czasu - rozważ dokupienie pakietu"
-        }>
-          <div className={`w-2 h-2 rounded-full animate-pulse ${
-            isOutOfTime ? 'bg-error' : 'bg-warning'
-          }`} />
-        </div>
-      )}
     </div>
   );
 }

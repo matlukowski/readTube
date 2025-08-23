@@ -21,7 +21,7 @@ model User {
   
   // Usage tracking for payment system
   minutesUsed        Int      @default(0)      // Total minutes of analyzed videos
-  minutesPurchased   Int      @default(60)     // Available minutes (60 minutes = 1 hour free)
+  minutesPurchased   Int      @default(999999) // Unlimited minutes (completely free app)
   subscriptionStatus String   @default("FREE") // FREE or PAID
   lastPurchaseAt     DateTime?                 // Last time user bought minutes
   
@@ -89,7 +89,7 @@ model Payment {
   amount           Int               // Amount in grosze (2500 = 25.00 PLN)
   currency         String   @default("pln")
   status           String            // pending, completed, failed, cancelled
-  minutesPurchased Int               // How many minutes were purchased (300 = 5 hours)
+  minutesPurchased Int               // How many minutes were purchased (999999 = unlimited)
   createdAt        DateTime @default(now())
   completedAt      DateTime?         // When payment was completed
   

@@ -1,8 +1,9 @@
 import Stripe from 'stripe';
 
-// Check if Stripe is configured
+// Check if Stripe is configured - currently disabled for free app
 export function isStripeEnabled(): boolean {
-  return !!process.env.STRIPE_SECRET_KEY;
+  return false; // Disabled - app is completely free
+  // return !!process.env.STRIPE_SECRET_KEY; // Uncomment to re-enable payments
 }
 
 // Server-side Stripe instance - only initialize if key is available
@@ -17,12 +18,12 @@ export default stripe;
 
 // Configuration constants
 export const STRIPE_CONFIG = {
-  // 5 hours = 300 minutes for 25 PLN
-  PRICE_PLN: 2500, // in grosze (25.00 PLN)
-  MINUTES_PER_PACKAGE: 300, // 5 hours = 300 minutes
+  // Unlimited access for 10 PLN
+  PRICE_PLN: 1000, // in grosze (10.00 PLN)
+  MINUTES_PER_PACKAGE: 999999, // Practically unlimited
   CURRENCY: 'pln' as const,
-  PRODUCT_NAME: 'ReadTube - Pakiet 5 godzin analiz',
-  PRODUCT_DESCRIPTION: 'ReadTube: Pakiet 5 godzin analiz filmów YouTube z podsumowaniami AI',
+  PRODUCT_NAME: 'ReadTube - Dostęp bez limitu',
+  PRODUCT_DESCRIPTION: 'ReadTube: Nieograniczone podsumowania filmów YouTube z AI',
 };
 
 // Helper function to create checkout session
