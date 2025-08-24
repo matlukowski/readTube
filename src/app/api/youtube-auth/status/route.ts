@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { hasValidYouTubeAuth, revokeYouTubeAuth } from '@/lib/youtube-oauth';
 
@@ -6,7 +6,7 @@ import { hasValidYouTubeAuth, revokeYouTubeAuth } from '@/lib/youtube-oauth';
  * Check YouTube authorization status
  * GET /api/youtube-auth/status
  */
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     // Authenticate user
     const { userId } = await auth();
@@ -37,7 +37,7 @@ export async function GET(_request: NextRequest) {
  * Revoke YouTube authorization
  * DELETE /api/youtube-auth/status
  */
-export async function DELETE(_request: NextRequest) {
+export async function DELETE() {
   try {
     // Authenticate user
     const { userId } = await auth();

@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 
 /**
  * Debug endpoint for YouTube OAuth2 configuration
  * GET /api/youtube-auth/debug
  */
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     // Authenticate user
     const { userId } = await auth();
@@ -32,7 +32,7 @@ export async function GET(_request: NextRequest) {
     let configError = null;
     try {
       const { getYouTubeOAuthConfig } = await import('@/lib/youtube-oauth');
-      const config = getYouTubeOAuthConfig();
+      getYouTubeOAuthConfig();
       console.log('✅ OAuth2 config loaded successfully');
     } catch (error) {
       configError = error instanceof Error ? error.message : 'Unknown config error';

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { generateAuthUrl } from '@/lib/youtube-oauth';
 
@@ -6,7 +6,7 @@ import { generateAuthUrl } from '@/lib/youtube-oauth';
  * Start YouTube OAuth2 authorization flow
  * GET /api/youtube-auth/authorize
  */
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     // Authenticate user
     const { userId } = await auth();

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { hasValidYouTubeAuth } from '@/lib/youtube-oauth';
 
@@ -6,7 +6,7 @@ import { hasValidYouTubeAuth } from '@/lib/youtube-oauth';
  * Debug endpoint for transcription system status
  * GET /api/debug/transcription
  */
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     // Authenticate user
     const { userId } = await auth();

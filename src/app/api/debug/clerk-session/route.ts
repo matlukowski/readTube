@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth, currentUser } from '@clerk/nextjs/server';
 
 /**
  * Debug endpoint to examine Clerk session structure
  * GET /api/debug/clerk-session
  */
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     // Get auth context
     const { userId, sessionId, getToken } = await auth();
@@ -18,7 +18,7 @@ export async function GET(_request: NextRequest) {
     const user = await currentUser();
     
     // Try to get any available tokens
-    let availableTokens = {};
+    const availableTokens: Record<string, string> = {};
     try {
       // Test common token templates that Clerk might support
       const tokenTemplates = [
@@ -37,7 +37,7 @@ export async function GET(_request: NextRequest) {
           if (token) {
             availableTokens[template] = token.substring(0, 20) + '...'; // Truncate for security
           }
-        } catch (e) {
+        } catch {
           // Token template doesn't exist, continue
         }
       }
@@ -52,16 +52,16 @@ export async function GET(_request: NextRequest) {
       emailAddress: account.emailAddress,
       username: account.username,
       // Check if there are any token-related fields (without exposing actual tokens)
-      hasAccessToken: !!(account as any).accessToken,
-      hasRefreshToken: !!(account as any).refreshToken,
-      scopes: (account as any).scopes || 'none',
-      tokenExpiry: (account as any).tokenExpiry || 'unknown',
+      hasAccessToken: !!(account as unknown as Record<string, unknown>).accessToken,
+      hasRefreshToken: !!(account as unknown as Record<string, unknown>).refreshToken,
+      scopes: (account as unknown as Record<string, unknown>).scopes || 'none',
+      tokenExpiry: (account as unknown as Record<string, unknown>).tokenExpiry || 'unknown',
       // Log all available fields for analysis
       availableFields: Object.keys(account).filter(key => !['accessToken', 'refreshToken'].includes(key))
     })) || [];
 
     // Check session claims for external auth data
-    const sessionClaims = (user as any)?.publicMetadata || {};
+    // Session claims are already available in user.publicMetadata
     
     return NextResponse.json({
       investigation: 'Clerk Session Structure Analysis',
