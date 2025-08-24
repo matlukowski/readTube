@@ -30,71 +30,75 @@ export async function extractAudioClientSide(
     throw new Error('Invalid YouTube ID format');
   }
 
-  const videoUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
+  // videoUrl not used directly, but kept for potential debugging
   
   try {
-    // Step 1: Use Cobalt API to get audio URL
-    onProgress?.('Łączenie z serwisem pobierania...');
-    console.log('🔗 Step 1: Getting audio URL from Cobalt API...');
+    // Step 1: Use our own audio proxy endpoint
+    onProgress?.('Łączenie z proxy serwera...');
+    console.log('🔗 Step 1: Getting audio from our proxy endpoint...');
     
-    const cobaltResponse = await fetch('https://co.wuk.sh/api/json', {
-      method: 'POST',
+    const proxyResponse = await fetch(`/api/audio-proxy?id=${youtubeId}`, {
+      method: 'GET',
       headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        url: videoUrl,
-        vCodec: 'h264',
-        vQuality: '720',
-        aFormat: 'mp3',
-        filenamePattern: 'classic',
-        isAudioOnly: true,
-      })
+        'Accept': 'audio/mpeg, */*',
+      }
     });
 
-    if (!cobaltResponse.ok) {
-      throw new Error(`Cobalt API failed: ${cobaltResponse.status}`);
+    if (!proxyResponse.ok) {
+      const errorData = await proxyResponse.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(`Audio proxy failed: ${proxyResponse.status} - ${errorData.error}`);
     }
 
-    const cobaltData = await cobaltResponse.json();
+    console.log('✅ Connected to audio proxy');
     
-    if (cobaltData.status !== 'success' || !cobaltData.url) {
-      throw new Error('Nie można pobrać audio URL z serwisu');
-    }
-
-    console.log('✅ Got audio URL from Cobalt API');
-    
-    // Step 2: Download audio file
+    // Step 2: Stream audio data with progress tracking
     onProgress?.('Pobieranie pliku audio...');
-    console.log('⬇️ Step 2: Downloading audio file...');
+    console.log('⬇️ Step 2: Streaming audio data...');
     
-    const audioResponse = await fetch(cobaltData.url);
-    
-    if (!audioResponse.ok) {
-      throw new Error(`Audio download failed: ${audioResponse.status}`);
+    if (!proxyResponse.body) {
+      throw new Error('No audio data received from proxy');
     }
 
-    const audioBlob = await audioResponse.blob();
-    const audioSize = audioBlob.size;
+    // Read the stream with progress tracking
+    const reader = proxyResponse.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalSize = 0;
     
-    console.log(`✅ Audio download complete: ${audioSize} bytes`);
-    
-    // Estimate duration (rough calculation)
-    const estimatedDuration = Math.min(audioSize / 32000, maxDuration); // 32KB/s estimate
-    
-    if (audioSize > maxDuration * 32000) { // Rough size check
-      throw new Error(`Film prawdopodobnie zbyt długi. Spróbuj z krótszym filmem.`);
+    while (true) {
+      const { done, value } = await reader.read();
+      
+      if (done) {
+        break;
+      }
+      
+      if (value) {
+        chunks.push(value);
+        totalSize += value.length;
+        
+        // Update progress every MB
+        if (totalSize % (1024 * 1024) < value.length) {
+          const sizeMB = Math.round(totalSize / 1024 / 1024);
+          onProgress?.(`Pobieranie audio... ${sizeMB}MB`);
+        }
+      }
     }
-
+    
+    console.log(`✅ Audio download complete: ${totalSize} bytes`);
+    
+    // Create blob from chunks
+    const audioBlob = new Blob(chunks as BlobPart[], { type: 'audio/mpeg' });
+    
+    // Estimate duration (rough calculation based on typical bitrates)
+    const estimatedDuration = Math.min(totalSize / 16000, maxDuration); // ~128kbps estimate
+    
     const result: ClientAudioExtractionResult = {
       audioBlob,
-      title: `YouTube Video ${youtubeId}`, // We don't have title from Cobalt
+      title: `YouTube Video ${youtubeId}`, // We don't have title from proxy
       duration: estimatedDuration,
-      size: audioSize
+      size: totalSize
     };
     
-    console.log(`🎉 Client-side extraction complete: ${Math.round(audioSize/1024/1024)}MB`);
+    console.log(`🎉 Client-side extraction complete: ${Math.round(totalSize/1024/1024)}MB`);
     onProgress?.('Audio pobrane pomyślnie!');
     
     return result;
@@ -116,8 +120,8 @@ export async function extractAudioClientSide(
         throw error; // Pass through duration error
       }
 
-      if (error.message.includes('Cobalt API')) {
-        throw new Error('Serwis pobierania jest niedostępny - spróbuj ponownie później');
+      if (error.message.includes('Audio proxy failed') || error.message.includes('proxy')) {
+        throw new Error('Serwer audio jest niedostępny - spróbuj ponownie później');
       }
     }
     
