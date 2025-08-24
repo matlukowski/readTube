@@ -52,6 +52,38 @@ function extractPlayerResponse(html: string): YouTubePlayerResponse | null {
   }
 }
 
+// Clean timedtext URL by removing potentially problematic parameters
+function cleanTimedtextUrl(baseUrl: string): string {
+  try {
+    const url = new URL(baseUrl);
+    
+    // Keep only essential parameters, remove problematic ones
+    const essentialParams = ['v', 'lang', 'kind', 'fmt'];
+    const paramsToKeep: Record<string, string> = {};
+    
+    // Extract essential parameters
+    essentialParams.forEach(param => {
+      const value = url.searchParams.get(param);
+      if (value) {
+        paramsToKeep[param] = value;
+      }
+    });
+    
+    // Rebuild URL with clean parameters
+    const cleanUrl = new URL(url.origin + url.pathname);
+    Object.entries(paramsToKeep).forEach(([key, value]) => {
+      cleanUrl.searchParams.set(key, value);
+    });
+    
+    console.log(`🧹 Cleaned URL: ${cleanUrl.toString()}`);
+    return cleanUrl.toString();
+    
+  } catch (error) {
+    console.warn('⚠️ Failed to clean URL, using original:', error);
+    return baseUrl;
+  }
+}
+
 // Select best caption track based on language preferences
 function selectBestTrack(tracks: CaptionTrack[], preferredLanguages: string[]): CaptionTrack | null {
   if (!tracks || tracks.length === 0) {
@@ -96,6 +128,9 @@ function selectBestTrack(tracks: CaptionTrack[], preferredLanguages: string[]): 
 
 // Fetch transcript from timedtext endpoint (try different formats)
 async function fetchTimedtext(baseUrl: string): Promise<string> {
+  // Clean the base URL by removing potentially problematic parameters
+  const cleanUrl = cleanTimedtextUrl(baseUrl);
+  
   // Try different formats in order of preference
   const formats = [
     { name: 'json3', param: '&fmt=json3' },
@@ -105,25 +140,33 @@ async function fetchTimedtext(baseUrl: string): Promise<string> {
   
   for (const format of formats) {
     try {
-      const urlWithFormat = baseUrl.includes('?') 
-        ? `${baseUrl}${format.param}` 
-        : `${baseUrl}?${format.param}`;
+      const urlWithFormat = cleanUrl.includes('?') 
+        ? `${cleanUrl}${format.param}` 
+        : `${cleanUrl}?${format.param}`;
       
       console.log(`📥 Trying ${format.name} format: ${urlWithFormat}`);
+      
+      // Add a small delay to avoid rate limiting
+      if (format.name !== 'json3') {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
       
       const response = await fetch(urlWithFormat, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-          'Accept': format.name === 'json3' ? 'application/json,*/*' : 'text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5',
-          'Accept-Language': 'pl,en-US;q=0.7,en;q=0.3',
-          'Accept-Encoding': 'gzip, deflate, br',
+          'Accept': '*/*',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br, zstd',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
           'Referer': 'https://www.youtube.com/',
-          'Origin': 'https://www.youtube.com',
-          'DNT': '1',
-          'Connection': 'keep-alive',
+          'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"',
           'Sec-Fetch-Dest': 'empty',
           'Sec-Fetch-Mode': 'cors',
-          'Sec-Fetch-Site': 'same-origin'
+          'Sec-Fetch-Site': 'same-origin',
+          'X-Requested-With': 'XMLHttpRequest'
         }
       });
 

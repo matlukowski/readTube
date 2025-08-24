@@ -4,15 +4,18 @@ import { transcribeRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
 import { checkUsageLimit, logVideoUsage } from '@/lib/usageMiddleware';
 import { YouTubeAPI } from '@/lib/youtube';
-import { getYouTubeTranscriptWithRetry } from '@/lib/youtube-transcript-extractor';
+import { pythonTranscriptClient } from '@/lib/python-transcript-client';
 import { extractAndTranscribeAudio } from '@/lib/audio-extractor';
 
-// Get transcript from YouTube using direct extraction (GetSubs-style)
-async function getYouTubeTranscript(youtubeId: string): Promise<string | null> {
-  console.log(`🚀 Starting GetSubs-style transcript extraction for ${youtubeId}`);
+// Get transcript from Python API (primary method)
+async function getYouTubeTranscript(youtubeId: string, language: string = 'pl'): Promise<string | null> {
+  console.log(`🐍 Starting Python API transcript extraction for ${youtubeId}`);
   
-  // Use our robust direct extraction method
-  return await getYouTubeTranscriptWithRetry(youtubeId, 3);
+  // Determine preferred languages based on request language
+  const preferredLanguages = language === 'pl' ? ['pl', 'pl-PL', 'en', 'en-US'] : [language, 'en', 'en-US'];
+  
+  // Use Python API with retry mechanism
+  return await pythonTranscriptClient.getTranscriptWithRetry(youtubeId, preferredLanguages, 2);
 }
 
 
@@ -73,24 +76,25 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Multi-level fallback workflow for transcript extraction
-    console.log(`🚀 Starting transcription workflow for ${youtubeId}`);
+    // Simplified workflow: Python API -> Gladia fallback
+    console.log(`🚀 Starting simplified transcription workflow for ${youtubeId}`);
     
     let transcript = clientTranscript;
     let source = 'client';
     
-    // Level 1: Try client-provided transcript (captions)
+    // Level 1: Try client-provided transcript (captions) - if provided
     if (!transcript) {
-      console.log('No client transcript provided, trying server-side caption extraction...');
+      console.log('No client transcript provided, trying Python API...');
       
-      // Level 2: Try server-side caption extraction as fallback
+      // Level 2: Try Python API (primary method)
       try {
-        transcript = await getYouTubeTranscript(youtubeId);
-        source = 'server-captions';
-      } catch {
-        console.log('Server-side caption extraction failed, trying audio transcription...');
+        transcript = await getYouTubeTranscript(youtubeId, language);
+        source = 'python-api';
+      } catch (pythonError) {
+        console.log('Python API failed, trying audio transcription...');
+        console.log(`❌ Python API error: ${pythonError instanceof Error ? pythonError.message : 'Unknown error'}`);
         
-        // Level 3: Try audio transcription with Gladia API
+        // Level 3: Try audio transcription with Gladia API (fallback)
         try {
           console.log('🎵 Attempting audio transcription via Gladia...');
           console.log(`🔧 Debug: GLADIA_API_KEY present: ${!!process.env.GLADIA_API_KEY}`);
@@ -113,21 +117,28 @@ export async function POST(request: NextRequest) {
           
           // Enhanced error details for debugging
           const errorMessage = audioError instanceof Error ? audioError.message : 'Unknown error';
+          const pythonErrorMessage = pythonError instanceof Error ? pythonError.message : 'Unknown error';
+          
           console.error('❌ Detailed error:', {
             youtubeId,
-            errorMessage,
+            pythonApiError: pythonErrorMessage,
+            audioError: errorMessage,
             errorType: audioError instanceof Error ? audioError.constructor.name : typeof audioError
           });
           
           // All methods failed - return comprehensive error
           return NextResponse.json({
             error: 'Nie można pobrać transkrypcji dla tego filmu',
-            details: 'Próbowaliśmy pobrać napisy i transkrypcję audio, ale żaden sposób nie zadziałał.',
-            technicalDetails: errorMessage,
+            details: 'Próbowaliśmy pobrać napisy przez Python API i transkrypcję audio, ale żaden sposób nie zadziałał.',
+            technicalDetails: {
+              pythonApi: pythonErrorMessage,
+              audioTranscription: errorMessage
+            },
             troubleshooting: {
-              captionsAvailable: false,
+              pythonApiAvailable: false,
               audioExtractionFailed: true,
               suggestions: [
+                'Sprawdź czy Python API jest uruchomione i dostępne',
                 'Sprawdź czy film ma włączone napisy automatyczne',
                 'Sprawdź czy film nie jest prywatny lub zablokowany', 
                 'Sprawdź czy film nie jest dłuższy niż 30 minut',
