@@ -9,12 +9,50 @@ import { getYouTubeTranscriptWithRetry } from '@/lib/youtube-transcript-extracto
 import { fetchYouTubeTranscript } from '@/lib/youtube-data-api';
 import { fetchYouTubeTranscriptOAuth } from '@/lib/youtube-data-api-oauth';
 import { hasValidYouTubeAuth } from '@/lib/youtube-oauth';
+import { hasValidGoogleYouTubeAuth } from '@/lib/google-oauth-helper';
 
 
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth();
+    // Try both authentication systems during migration
+    let userId: string | null = null;
+    let googleId: string | undefined = undefined;
+    
+    // Method 1: Try Google OAuth (new system)
+    try {
+      const body = await request.clone().json();
+      if (body.googleId && typeof body.googleId === 'string') {
+        googleId = body.googleId;
+        // Get user by googleId to get database userId
+        const user = await prisma.user.findUnique({
+          where: { googleId: googleId },
+          select: { id: true }
+        });
+        if (user) {
+          userId = user.id;
+        }
+      }
+    } catch {
+      // Body might not have googleId, continue
+    }
+    
+    // Method 2: Fallback to Clerk (old system)
+    if (!userId) {
+      const clerkAuth = await auth();
+      if (clerkAuth.userId) {
+        // Get user by clerkId
+        const user = await prisma.user.findUnique({
+          where: { clerkId: clerkAuth.userId },
+          select: { id: true, googleId: true }
+        });
+        if (user) {
+          userId = user.id;
+          googleId = user.googleId || undefined; // Convert null to undefined
+        }
+      }
+    }
+    
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -81,9 +119,28 @@ export async function POST(request: NextRequest) {
       // Strategy 1: Try YouTube OAuth2 Data API (BEST - full access)
       console.log('🔐 Strategy 1: Trying YouTube OAuth2 Data API...');
       try {
-        const hasAuth = await hasValidYouTubeAuth(userId);
-        if (hasAuth) {
-          const result = await fetchYouTubeTranscriptOAuth(youtubeId, userId, language);
+        // Try Google OAuth system first, fallback to Clerk system
+        let hasAuth = false;
+        let oauthResult;
+        
+        if (googleId) {
+          hasAuth = await hasValidGoogleYouTubeAuth(googleId);
+          if (hasAuth) {
+            oauthResult = await fetchYouTubeTranscriptOAuth(youtubeId, googleId, language);
+          }
+        } else {
+          // Fallback to old Clerk system
+          hasAuth = await hasValidYouTubeAuth(userId);
+          if (hasAuth) {
+            // Note: This will fail because we changed the function signature
+            // Users will need to migrate to Google OAuth
+            console.log('⚠️ Old Clerk OAuth detected - user should migrate to Google OAuth');
+            throw new Error('Please re-authenticate with Google to access YouTube API');
+          }
+        }
+        
+        if (hasAuth && oauthResult) {
+          const result = oauthResult;
           if (result.transcript && result.transcript.trim().length > 0) {
             transcript = result.transcript;
             source = result.source;

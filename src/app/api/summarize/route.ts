@@ -6,7 +6,44 @@ import { prisma } from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth();
+    // Try both authentication systems during migration
+    let userId: string | null = null;
+    let googleId: string | undefined = undefined;
+    
+    // Method 1: Try Google OAuth (new system)
+    try {
+      const body = await request.clone().json();
+      if (body.googleId && typeof body.googleId === 'string') {
+        googleId = body.googleId;
+        // Get user by googleId to get database userId
+        const user = await prisma.user.findUnique({
+          where: { googleId: googleId },
+          select: { id: true }
+        });
+        if (user) {
+          userId = user.id;
+        }
+      }
+    } catch {
+      // Body might not have googleId, continue
+    }
+    
+    // Method 2: Fallback to Clerk (old system)
+    if (!userId) {
+      const clerkAuth = await auth();
+      if (clerkAuth.userId) {
+        // Get user by clerkId
+        const user = await prisma.user.findUnique({
+          where: { clerkId: clerkAuth.userId },
+          select: { id: true, googleId: true }
+        });
+        if (user) {
+          userId = user.id;
+          googleId = user.googleId || undefined; // Convert null to undefined
+        }
+      }
+    }
+    
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

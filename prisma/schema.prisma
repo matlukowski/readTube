@@ -13,7 +13,8 @@ datasource db {
 
 model User {
   id                 String   @id @default(cuid())
-  clerkId            String   @unique
+  clerkId            String?  @unique  // Made optional for migration
+  googleId           String?  @unique  // New Google OAuth ID
   email              String   @unique
   name               String?
   createdAt          DateTime @default(now())

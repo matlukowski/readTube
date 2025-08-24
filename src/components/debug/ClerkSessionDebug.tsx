@@ -28,12 +28,14 @@ export function ClerkSessionDebug() {
     const testTokens = async () => {
       setIsLoading(true);
       const tokenTemplates = [
+        'google-youtube', // Custom provider
+        'google_youtube', // Alternative naming
+        'youtube',
         'google',
         'google_oauth',
         'oauth_google', 
         'external_google',
         'google_access_token',
-        'youtube',
         'oauth',
         'default'
       ];
@@ -79,18 +81,27 @@ export function ClerkSessionDebug() {
 
   const externalAccounts = user?.externalAccounts?.map(account => ({
     provider: account.provider,
-    externalId: account.externalId?.substring(0, 8) + '...',
+    externalId: (account as unknown as { externalId?: string }).externalId?.substring(0, 8) + '...',
     emailAddress: account.emailAddress,
     username: account.username,
     // Check for token-related fields
-    hasAccessToken: !!(account as any).accessToken,
-    hasRefreshToken: !!(account as any).refreshToken, 
-    scopes: (account as any).scopes || 'none',
-    tokenExpiry: (account as any).tokenExpiry || 'unknown',
+    hasAccessToken: !!(account as unknown as { accessToken?: string }).accessToken,
+    hasRefreshToken: !!(account as unknown as { refreshToken?: string }).refreshToken, 
+    scopes: (account as unknown as { scopes?: string[] }).scopes || 'none',
+    tokenExpiry: (account as unknown as { tokenExpiry?: string }).tokenExpiry || 'unknown',
     allFields: Object.keys(account)
   })) || [];
 
   const googleAccount = externalAccounts.find(acc => acc.provider === 'google');
+  const youtubeAccount = externalAccounts.find(acc => 
+    (acc.provider as string) === 'google-youtube' || 
+    (acc.provider as string) === 'google_youtube'
+  );
+  
+  const hasCustomYouTubeProvider = !!youtubeAccount;
+  const youtubeTokens = tokenResults.filter(r => 
+    r.hasToken && (r.template === 'google-youtube' || r.template === 'google_youtube' || r.template === 'youtube')
+  );
 
   return (
     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
@@ -105,6 +116,14 @@ export function ClerkSessionDebug() {
           {isExpanded ? 'Collapse' : 'Expand'} Debug Info
         </button>
       </div>
+
+      {hasCustomYouTubeProvider && (
+        <div className="bg-green-100 border border-green-300 p-3 rounded mb-4">
+          <div className="flex items-center">
+            <span className="text-green-800 font-medium">🎉 YouTube Custom Provider Detected!</span>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <div className="bg-white p-3 rounded border">
@@ -134,19 +153,26 @@ export function ClerkSessionDebug() {
         </div>
 
         <div className="bg-white p-3 rounded border">
-          <h4 className="font-medium text-gray-900 mb-2">Token Test</h4>
+          <h4 className="font-medium text-gray-900 mb-2">YouTube Token Test</h4>
           <div className="text-sm space-y-1">
             {isLoading ? (
               <div>Testing tokens...</div>
             ) : (
               <>
-                <div><strong>Templates Tested:</strong> {tokenResults.length}</div>
-                <div><strong>Tokens Found:</strong> {tokenResults.filter(r => r.hasToken).length}</div>
-                {tokenResults.filter(r => r.hasToken).map(result => (
-                  <div key={result.template} className="text-green-600">
-                    ✅ {result.template}
+                <div><strong>Total Templates:</strong> {tokenResults.length}</div>
+                <div><strong>Total Tokens:</strong> {tokenResults.filter(r => r.hasToken).length}</div>
+                <div><strong>YouTube Tokens:</strong> {youtubeTokens.length}</div>
+                {youtubeTokens.length > 0 ? (
+                  youtubeTokens.map(result => (
+                    <div key={result.template} className="text-green-600 font-medium">
+                      🎯 {result.template}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-orange-600">
+                    ⚠️ No YouTube tokens - configure custom provider
                   </div>
-                ))}
+                )}
               </>
             )}
           </div>

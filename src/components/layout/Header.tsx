@@ -1,13 +1,15 @@
 'use client';
 
-import { UserButton, useUser } from '@clerk/nextjs';
 import Link from 'next/link';
 import { Youtube, Moon, Sun, Languages } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import LoginButton from '@/components/auth/LoginButton';
+import UserMenu from '@/components/auth/UserMenu';
 import UsageCounter from '@/components/usage/UsageCounter';
 
 export default function Header() {
-  const { isSignedIn } = useUser();
+  const { isAuthenticated } = useAuth();
   const [theme, setTheme] = useState('dark');
   const [language, setLanguage] = useState('pl');
 
@@ -46,7 +48,7 @@ export default function Header() {
       <div className="navbar-center hidden lg:flex">
         <ul className="menu menu-horizontal px-1">
           <li><Link href="/analyze">Analizuj</Link></li>
-          {isSignedIn && (
+          {isAuthenticated && (
             <>
               <li><Link href="/library">Biblioteka</Link></li>
             </>
@@ -55,8 +57,8 @@ export default function Header() {
       </div>
       
       <div className="navbar-end gap-2">
-        {/* Usage Counter - only for signed in users */}
-        {isSignedIn && <UsageCounter />}
+        {/* Usage Counter - only for authenticated users */}
+        {isAuthenticated && <UsageCounter />}
         
         {/* Language Selector */}
         <div className="dropdown dropdown-end">
@@ -90,16 +92,10 @@ export default function Header() {
         </button>
         
         {/* User Authentication */}
-        {isSignedIn ? (
-          <UserButton 
-            afterSignOutUrl="/"
-            userProfileMode="navigation"
-            userProfileUrl="/user-profile"
-          />
+        {isAuthenticated ? (
+          <UserMenu />
         ) : (
-          <Link href="/sign-in" className="btn btn-primary btn-sm">
-            Zaloguj się
-          </Link>
+          <LoginButton size="sm" text="Zaloguj się" />
         )}
       </div>
     </header>
