@@ -12,10 +12,14 @@ interface CaptionTrack {
   isTranslatable: boolean;
 }
 
-interface TranscriptSegment {
-  text: string;
-  start: number;
-  duration: number;
+interface YouTubePlayerResponse {
+  captions?: {
+    playerCaptionsTracklistRenderer?: {
+      captionTracks?: CaptionTrack[];
+      audioTracks?: unknown[];
+      translationLanguages?: unknown[];
+    };
+  };
 }
 
 export class ClientYouTubeExtractor {
@@ -37,7 +41,7 @@ export class ClientYouTubeExtractor {
           throw new Error(`Failed to fetch YouTube page: ${response.status}`);
         }
         html = await response.text();
-      } catch (error) {
+      } catch {
         // If CORS error, try through proxy
         console.log('Direct fetch failed, trying proxy...');
         const proxyUrl = `/api/proxy/youtube?url=${encodeURIComponent(pageUrl)}`;
@@ -91,7 +95,7 @@ export class ClientYouTubeExtractor {
     }
   }
 
-  private extractPlayerResponse(html: string): any {
+  private extractPlayerResponse(html: string): YouTubePlayerResponse | null {
     try {
       // Try multiple patterns that YouTube uses
       const patterns = [
@@ -106,15 +110,16 @@ export class ClientYouTubeExtractor {
         if (match && match[1]) {
           try {
             return JSON.parse(match[1]);
-          } catch (e) {
-            console.warn('Failed to parse match:', e);
+          } catch (parseError) {
+            console.warn('Failed to parse match:', parseError);
             continue;
           }
         }
       }
 
       // Fallback: Try to find it in a script tag
-      const scriptMatch = html.match(/<script[^>]*>.*?ytInitialPlayerResponse[^<]*<\/script>/gs);
+      const scriptRegex = new RegExp('<script[^>]*>.*?ytInitialPlayerResponse[^<]*<\\/script>', 'g');
+      const scriptMatch = html.match(scriptRegex);
       if (scriptMatch) {
         for (const script of scriptMatch) {
           for (const pattern of patterns) {
@@ -122,7 +127,7 @@ export class ClientYouTubeExtractor {
             if (match && match[1]) {
               try {
                 return JSON.parse(match[1]);
-              } catch (e) {
+              } catch {
                 continue;
               }
             }
