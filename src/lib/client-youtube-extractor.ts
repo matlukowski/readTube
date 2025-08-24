@@ -263,7 +263,7 @@ export class ClientYouTubeExtractor {
         
         // If no transcript found (not an error), don't retry
         if (attempt === 1) {
-          console.log(`ℹ️ No transcript available for ${videoId}`);
+          console.log(`ℹ️ No captions available for ${videoId}`);
           return null;
         }
         
@@ -280,7 +280,36 @@ export class ClientYouTubeExtractor {
       }
     }
 
-    throw lastError || new Error('All extraction attempts failed');
+    throw lastError || new Error('All caption extraction attempts failed');
+  }
+
+  // Check if audio extraction might be needed as fallback
+  async checkAudioFallbackAvailability(videoId: string): Promise<{available: boolean, reason?: string}> {
+    try {
+      console.log(`🔍 Checking audio fallback availability for ${videoId}...`);
+      
+      const response = await fetch(`/api/audio-extract?id=${videoId}`);
+      
+      if (!response.ok) {
+        return { available: false, reason: 'API check failed' };
+      }
+      
+      const result = await response.json();
+      
+      if (!result.available) {
+        return { available: false, reason: result.error || 'Audio not available' };
+      }
+      
+      if (result.tooLong) {
+        return { available: false, reason: 'Video too long for audio transcription' };
+      }
+      
+      return { available: true };
+      
+    } catch (error) {
+      console.error('❌ Audio availability check failed:', error);
+      return { available: false, reason: 'Check failed' };
+    }
   }
 }
 

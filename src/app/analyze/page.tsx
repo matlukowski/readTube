@@ -11,6 +11,7 @@ import PaymentModal from '@/components/payments/PaymentModal';
 import { extractYouTubeId } from '@/components/analyze/AnalyzeBar';
 import { formatMinutesToTime } from '@/lib/stripe';
 import { useYouTubeTranscript } from '@/hooks/useYouTubeTranscript';
+import { useMultiModalExtraction } from '@/hooks/useAudioExtraction';
 
 interface VideoDetails {
   youtubeId: string;
@@ -35,6 +36,7 @@ function AnalyzeContent() {
   const router = useRouter();
   const { isSignedIn } = useUser();
   const { extractTranscript } = useYouTubeTranscript();
+  const { extractWithFallback, overallProgress, extractionMethod } = useMultiModalExtraction();
   
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [currentStep, setCurrentStep] = useState<'input' | 'analyzing' | 'completed' | 'error'>('input');
@@ -185,10 +187,26 @@ function AnalyzeContent() {
         
         // If server requires client extraction and we haven't done it yet
         if (errorData.requiresClientExtraction && !transcript) {
-          throw new Error('Nie udało się pobrać napisów z YouTube. Spróbuj ponownie lub wybierz inny film.');
+          console.log('⚠️ Server requires client extraction, but captions failed. Trying audio extraction...');
+          
+          // Last resort: try audio extraction as fallback
+          try {
+            updateProgress('Próba transkrypcji audio...');
+            const audioResult = await extractWithFallback(youtubeId, language);
+            
+            if (audioResult) {
+              transcript = audioResult.transcript;
+              transcriptSource = 'audio-fallback';
+              console.log('✅ Audio extraction fallback successful');
+              updateProgress('Transkrypcja audio zakończona', true);
+            }
+          } catch (audioError) {
+            console.error('❌ Audio extraction fallback failed:', audioError);
+            throw new Error('Nie udało się pobrać napisów ani transkrypcji audio. Sprawdź czy film ma napisy lub nie jest prywatny.');
+          }
+        } else {
+          throw new Error(errorData.error || 'Nie udało się wygenerować transkrypcji');
         }
-        
-        throw new Error(errorData.error || 'Nie udało się wygenerować transkrypcji');
       }
 
       const transcriptData = await transcriptResponse.json();
@@ -357,7 +375,12 @@ function AnalyzeContent() {
             <div className="space-y-4">
               {progress.map((step, index) => (
                 <div key={index} className="flex items-center justify-between p-4 bg-base-100 rounded-lg">
-                  <span className="font-medium">{step.step}</span>
+                  <div className="flex flex-col">
+                    <span className="font-medium">{step.step}</span>
+                    {extractionMethod === 'audio' && !step.completed && overallProgress && (
+                      <span className="text-sm text-base-content/60 mt-1">{overallProgress}</span>
+                    )}
+                  </div>
                   {step.completed ? (
                     <CheckCircle className="w-5 h-5 text-success" />
                   ) : (
@@ -366,6 +389,22 @@ function AnalyzeContent() {
                 </div>
               ))}
             </div>
+
+            {/* Additional info for audio extraction */}
+            {extractionMethod === 'audio' && (
+              <div className="mt-6 p-4 bg-info/10 border border-info/20 rounded-lg">
+                <div className="flex items-center gap-2 text-info mb-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="font-medium">Transkrypcja audio</span>
+                </div>
+                <p className="text-sm text-base-content/70">
+                  Napisy nie są dostępne dla tego filmu, więc pobieramy audio i tworzymy transkrypcję automatycznie. 
+                  Ten proces może potrwać kilka minut.
+                </p>
+              </div>
+            )}
 
             <div className="mt-8">
               <div className="text-sm text-base-content/60">

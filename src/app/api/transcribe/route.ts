@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { youtubeId, transcript: clientTranscript } = body;
+    const { youtubeId, transcript: clientTranscript, language = 'pl' } = body;
     
     // Validate the request
     transcribeRequestSchema.parse({ youtubeId });
@@ -72,33 +72,73 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // New workflow: Use client-provided transcript or fallback to server extraction
+    // Multi-level fallback workflow for transcript extraction
     console.log(`🚀 Starting transcription workflow for ${youtubeId}`);
     
     let transcript = clientTranscript;
     let source = 'client';
     
-    // If no client transcript provided, try server-side extraction as fallback
+    // Level 1: Try client-provided transcript (captions)
     if (!transcript) {
-      console.log('No client transcript provided, attempting server-side extraction...');
+      console.log('No client transcript provided, trying server-side caption extraction...');
+      
+      // Level 2: Try server-side caption extraction as fallback
       try {
         transcript = await getYouTubeTranscript(youtubeId);
-        source = 'server-fallback';
-      } catch (error) {
-        console.error('Server-side extraction failed:', error);
-        // Server extraction failed, client extraction is required
-        return NextResponse.json({
-          error: 'Transcript extraction failed. Please try again.',
-          requiresClientExtraction: true,
-          details: 'Server cannot access YouTube. Client-side extraction required.'
-        }, { status: 422 });
+        source = 'server-captions';
+      } catch {
+        console.log('Server-side caption extraction failed, trying audio transcription...');
+        
+        // Level 3: Try audio transcription with Gladia API
+        try {
+          console.log('🎵 Attempting audio transcription via Gladia...');
+          const audioResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/audio-extract`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.INTERNAL_API_KEY || 'internal'}`
+            },
+            body: JSON.stringify({ 
+              youtubeId, 
+              language 
+            })
+          });
+          
+          if (audioResponse.ok) {
+            const audioData = await audioResponse.json();
+            transcript = audioData.transcript;
+            source = 'gladia-audio';
+            console.log('✅ Audio transcription successful via Gladia');
+          } else {
+            const audioError = await audioResponse.json();
+            console.error('❌ Audio transcription failed:', audioError.error);
+            throw new Error(audioError.error || 'Audio transcription failed');
+          }
+        } catch (audioError) {
+          console.error('❌ All transcription methods failed:', audioError);
+          
+          // All methods failed - return comprehensive error
+          return NextResponse.json({
+            error: 'Nie można pobrać transkrypcji dla tego filmu',
+            details: 'Próbowaliśmy pobrać napisy i transkrypcję audio, ale żaden sposób nie zadziałał.',
+            troubleshooting: {
+              captionsAvailable: false,
+              audioExtractionFailed: true,
+              suggestions: [
+                'Sprawdź czy film ma włączone napisy automatyczne',
+                'Sprawdź czy film nie jest prywatny lub zablokowany',
+                'Spróbuj z innym filmem YouTube'
+              ]
+            }
+          }, { status: 422 });
+        }
       }
     }
     
     if (!transcript || transcript.length === 0) {
       return NextResponse.json({
-        error: 'Brak możliwości wykonania podsumowania dla tego filmu',
-        requiresClientExtraction: true
+        error: 'Transkrypcja jest pusta',
+        details: 'Udało się połączyć z usługą transkrypcji, ale nie otrzymano żadnego tekstu.'
       }, { status: 422 });
     }
     
