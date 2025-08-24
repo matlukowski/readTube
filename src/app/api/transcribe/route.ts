@@ -93,6 +93,9 @@ export async function POST(request: NextRequest) {
         // Level 3: Try audio transcription with Gladia API
         try {
           console.log('🎵 Attempting audio transcription via Gladia...');
+          console.log(`🔧 Debug: GLADIA_API_KEY present: ${!!process.env.GLADIA_API_KEY}`);
+          console.log(`🔧 Debug: YouTube ID: ${youtubeId}, Language: ${language}`);
+          
           const audioResult = await extractAndTranscribeAudio(youtubeId, { 
             language: language === 'auto' ? undefined : language 
           });

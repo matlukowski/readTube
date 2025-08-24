@@ -44,6 +44,10 @@ export class GladiaClient {
   async uploadAudio(audioStream: ReadableStream | Buffer, config?: GladiaConfig): Promise<GladiaUploadResponse> {
     try {
       console.log('🎵 Uploading audio to Gladia API...');
+      console.log(`🔧 Debug: Audio stream type: ${audioStream instanceof Buffer ? 'Buffer' : audioStream instanceof ReadableStream ? 'ReadableStream' : 'Unknown'}`);
+      if (audioStream instanceof Buffer) {
+        console.log(`🔧 Debug: Buffer size: ${audioStream.length} bytes`);
+      }
 
       const formData = new FormData();
       
@@ -77,6 +81,7 @@ export class GladiaClient {
       }
 
       formData.append('audio', audioBlob, 'audio.mp3');
+      console.log(`🔧 Debug: Added audio blob to FormData`);
       
       // Add configuration
       const transcriptionConfig = {
@@ -88,7 +93,9 @@ export class GladiaClient {
       };
       
       formData.append('config', JSON.stringify(transcriptionConfig));
+      console.log(`🔧 Debug: Added config to FormData: ${JSON.stringify(transcriptionConfig)}`);
 
+      console.log(`🔧 Debug: Making POST request to ${this.baseUrl}/pre-recorded`);
       const response = await fetch(`${this.baseUrl}/pre-recorded`, {
         method: 'POST',
         headers: {
@@ -97,13 +104,17 @@ export class GladiaClient {
         body: formData
       });
 
+      console.log(`🔧 Debug: Gladia upload response status: ${response.status}`);
+
       if (!response.ok) {
         const errorData = await response.text();
+        console.error(`❌ Gladia upload failed: ${response.status} - ${errorData}`);
         throw new Error(`Gladia upload failed: ${response.status} - ${errorData}`);
       }
 
       const result = await response.json();
       console.log('✅ Audio uploaded to Gladia, transcription ID:', result.id);
+      console.log(`🔧 Debug: Upload result: ${JSON.stringify(result)}`);
       
       return result;
     } catch (error) {
@@ -205,9 +216,17 @@ export class GladiaClient {
 export function createGladiaClient(): GladiaClient {
   const apiKey = process.env.GLADIA_API_KEY;
   
+  console.log(`🔧 Debug: Creating Gladia client...`);
+  console.log(`🔧 Debug: GLADIA_API_KEY present: ${!!apiKey}`);
+  if (apiKey) {
+    console.log(`🔧 Debug: API key starts with: ${apiKey.substring(0, 8)}...`);
+  }
+  
   if (!apiKey) {
+    console.error(`❌ GLADIA_API_KEY environment variable is not set`);
     throw new Error('GLADIA_API_KEY environment variable is not set');
   }
   
+  console.log(`✅ Gladia client created successfully`);
   return new GladiaClient(apiKey);
 }
