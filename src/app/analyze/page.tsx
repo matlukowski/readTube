@@ -8,6 +8,7 @@ import { ArrowLeft, Clock, Eye, BookOpen, Save, ExternalLink, AlertCircle, Check
 import AnalyzeBar from '@/components/analyze/AnalyzeBar';
 import Header from '@/components/layout/Header';
 import PaymentModal from '@/components/payments/PaymentModal';
+import { YouTubeAuth } from '@/components/YouTubeAuth';
 import { extractYouTubeId } from '@/components/analyze/AnalyzeBar';
 import { formatMinutesToTime } from '@/lib/stripe';
 import { useYouTubeTranscript } from '@/hooks/useYouTubeTranscript';
@@ -343,6 +344,8 @@ function AnalyzeContent() {
       <Header />
       
       <main className="container mx-auto px-4 py-8">
+        {/* YouTube Authorization Banner */}
+        {isSignedIn && <YouTubeAuth variant="banner" />}
         {/* Back button when not on input step */}
         {currentStep !== 'input' && (
           <button

@@ -25,11 +25,12 @@ model User {
   subscriptionStatus String   @default("FREE") // FREE or PAID
   lastPurchaseAt     DateTime?                 // Last time user bought minutes
   
-  searches  Search[]
-  favorites Favorite[]
-  videos    Video[]     // User's library videos
-  payments  Payment[]   // User's payment history
-  usageLogs UsageLog[]  // Detailed usage tracking
+  searches    Search[]
+  favorites   Favorite[]
+  videos      Video[]     // User's library videos
+  payments    Payment[]   // User's payment history
+  usageLogs   UsageLog[]  // Detailed usage tracking
+  youtubeAuth YouTubeAuth? // YouTube OAuth2 authorization
   
   @@map("users")
 }
@@ -110,4 +111,19 @@ model UsageLog {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   @@map("usage_logs")
+}
+
+model YouTubeAuth {
+  id           String   @id @default(cuid())
+  userId       String   @unique // One-to-one relationship with User
+  accessToken  String   // OAuth2 access token
+  refreshToken String?  // OAuth2 refresh token (optional)
+  expiresAt    DateTime // When access token expires
+  scope        String   // Granted scopes
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("youtube_auth")
 }
