@@ -4,19 +4,8 @@ import { transcribeRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
 import { checkUsageLimit, logVideoUsage } from '@/lib/usageMiddleware';
 import { YouTubeAPI } from '@/lib/youtube';
-import { pythonTranscriptClient } from '@/lib/python-transcript-client';
-import { extractAndTranscribeAudio } from '@/lib/audio-extractor';
-
-// Get transcript from Python API (primary method)
-async function getYouTubeTranscript(youtubeId: string, language: string = 'pl'): Promise<string | null> {
-  console.log(`🐍 Starting Python API transcript extraction for ${youtubeId}`);
-  
-  // Determine preferred languages based on request language
-  const preferredLanguages = language === 'pl' ? ['pl', 'pl-PL', 'en', 'en-US'] : [language, 'en', 'en-US'];
-  
-  // Use Python API with retry mechanism
-  return await pythonTranscriptClient.getTranscriptWithRetry(youtubeId, preferredLanguages, 2);
-}
+import { extractAudioWithYtDlp, checkYtDlpAvailability } from '@/lib/yt-dlp-audio';
+import { createGladiaClient } from '@/lib/gladia-client';
 
 
 
@@ -76,77 +65,89 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Simplified workflow: Python API -> Gladia fallback
-    console.log(`🚀 Starting simplified transcription workflow for ${youtubeId}`);
+    // Simplified workflow: yt-dlp audio extraction -> Gladia transcription
+    console.log(`🚀 Starting yt-dlp + Gladia transcription workflow for ${youtubeId}`);
     
     let transcript = clientTranscript;
     let source = 'client';
     
-    // Level 1: Try client-provided transcript (captions) - if provided
+    // Skip client transcript for now - go straight to audio extraction
     if (!transcript) {
-      console.log('No client transcript provided, trying Python API...');
+      console.log('Starting audio extraction and transcription...');
       
-      // Level 2: Try Python API (primary method)
       try {
-        transcript = await getYouTubeTranscript(youtubeId, language);
-        source = 'python-api';
-      } catch (pythonError) {
-        console.log('Python API failed, trying audio transcription...');
-        console.log(`❌ Python API error: ${pythonError instanceof Error ? pythonError.message : 'Unknown error'}`);
+        // Check if yt-dlp is available
+        console.log('🔍 Checking yt-dlp availability...');
+        const ytDlpAvailable = await checkYtDlpAvailability();
         
-        // Level 3: Try audio transcription with Gladia API (fallback)
-        try {
-          console.log('🎵 Attempting audio transcription via Gladia...');
-          console.log(`🔧 Debug: GLADIA_API_KEY present: ${!!process.env.GLADIA_API_KEY}`);
-          console.log(`🔧 Debug: YouTube ID: ${youtubeId}, Language: ${language}`);
-          
-          const audioResult = await extractAndTranscribeAudio(youtubeId, { 
-            language: language === 'auto' ? undefined : language 
-          });
-          
-          if (audioResult && audioResult.transcript) {
-            transcript = audioResult.transcript;
-            source = 'gladia-audio';
-            console.log('✅ Audio transcription successful via Gladia');
-            console.log(`📊 Audio details: ${audioResult.processingInfo.audioFormat}, ${audioResult.processingInfo.durationSeconds}s`);
-          } else {
-            throw new Error('Audio transcription returned empty result');
-          }
-        } catch (audioError) {
-          console.error('❌ All transcription methods failed:', audioError);
-          
-          // Enhanced error details for debugging
-          const errorMessage = audioError instanceof Error ? audioError.message : 'Unknown error';
-          const pythonErrorMessage = pythonError instanceof Error ? pythonError.message : 'Unknown error';
-          
-          console.error('❌ Detailed error:', {
-            youtubeId,
-            pythonApiError: pythonErrorMessage,
-            audioError: errorMessage,
-            errorType: audioError instanceof Error ? audioError.constructor.name : typeof audioError
-          });
-          
-          // All methods failed - return comprehensive error
-          return NextResponse.json({
-            error: 'Nie można pobrać transkrypcji dla tego filmu',
-            details: 'Próbowaliśmy pobrać napisy przez Python API i transkrypcję audio, ale żaden sposób nie zadziałał.',
-            technicalDetails: {
-              pythonApi: pythonErrorMessage,
-              audioTranscription: errorMessage
-            },
-            troubleshooting: {
-              pythonApiAvailable: false,
-              audioExtractionFailed: true,
-              suggestions: [
-                'Sprawdź czy Python API jest uruchomione i dostępne',
-                'Sprawdź czy film ma włączone napisy automatyczne',
-                'Sprawdź czy film nie jest prywatny lub zablokowany', 
-                'Sprawdź czy film nie jest dłuższy niż 30 minut',
-                'Spróbuj z innym filmem YouTube'
-              ]
-            }
-          }, { status: 422 });
+        if (!ytDlpAvailable) {
+          throw new Error('yt-dlp is not installed or not available. Please install yt-dlp first.');
         }
+        
+        console.log('✅ yt-dlp is available');
+        
+        // Extract audio using yt-dlp
+        console.log('🎵 Extracting audio with yt-dlp...');
+        const audioResult = await extractAudioWithYtDlp(youtubeId, {
+          format: 'mp3',
+          quality: 'best',
+          maxDuration: 60 * 60 // 60 minutes
+        });
+        
+        console.log(`📊 Audio extracted: ${audioResult.title} (${Math.round(audioResult.size / 1024 / 1024)}MB)`);
+        
+        // Transcribe using Gladia API
+        console.log('🤖 Starting Gladia transcription...');
+        console.log(`🔧 Debug: GLADIA_API_KEY present: ${!!process.env.GLADIA_API_KEY}`);
+        
+        const gladiaClient = createGladiaClient();
+        const gladiaConfig = {
+          language: language === 'auto' ? undefined : language,
+          diarization: false, // Disable for faster processing
+          code_switching: true, // Enable multiple languages
+        };
+        
+        console.log(`🔧 Gladia config: ${JSON.stringify(gladiaConfig)}`);
+        
+        transcript = await gladiaClient.transcribeAudio(audioResult.audioBuffer, gladiaConfig, 300000); // 5 minute timeout
+        source = 'yt-dlp-gladia';
+        
+        console.log(`✅ Transcription completed: ${transcript ? transcript.length : 0} characters`);
+        
+        if (!transcript || transcript.trim().length === 0) {
+          throw new Error('Gladia returned empty transcription');
+        }
+        
+      } catch (audioError) {
+        console.error('❌ Audio transcription workflow failed:', audioError);
+        
+        // Enhanced error details for debugging
+        const errorMessage = audioError instanceof Error ? audioError.message : 'Unknown error';
+        
+        console.error('❌ Detailed error:', {
+          youtubeId,
+          workflow: 'yt-dlp-gladia',
+          error: errorMessage,
+          errorType: audioError instanceof Error ? audioError.constructor.name : typeof audioError
+        });
+        
+        // Return comprehensive error
+        return NextResponse.json({
+          error: 'Nie można pobrać transkrypcji dla tego filmu',
+          details: 'Próbowaliśmy wyodrębnić audio z YouTube i przetworzyć go przez Gladia API, ale proces nie powiódł się.',
+          technicalDetails: errorMessage,
+          troubleshooting: {
+            ytDlpAvailable: await checkYtDlpAvailability(),
+            gladiaApiKeyPresent: !!process.env.GLADIA_API_KEY,
+            suggestions: [
+              'Sprawdź czy yt-dlp jest zainstalowany (pip install yt-dlp)',
+              'Sprawdź czy GLADIA_API_KEY jest ustawiony',
+              'Sprawdź czy film nie jest prywatny lub zablokowany', 
+              'Sprawdź czy film nie jest dłuższy niż 60 minut',
+              'Spróbuj z innym filmem YouTube'
+            ]
+          }
+        }, { status: 422 });
       }
     }
     
