@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { checkUsageLimit, logVideoUsage } from '@/lib/usageMiddleware';
 import { YouTubeAPI } from '@/lib/youtube';
 import { getYouTubeTranscriptWithRetry } from '@/lib/youtube-transcript-extractor';
+import { extractAndTranscribeAudio } from '@/lib/audio-extractor';
 
 // Get transcript from YouTube using direct extraction (GetSubs-style)
 async function getYouTubeTranscript(youtubeId: string): Promise<string | null> {
@@ -92,41 +93,41 @@ export async function POST(request: NextRequest) {
         // Level 3: Try audio transcription with Gladia API
         try {
           console.log('🎵 Attempting audio transcription via Gladia...');
-          const audioResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/audio-extract`, {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${process.env.INTERNAL_API_KEY || 'internal'}`
-            },
-            body: JSON.stringify({ 
-              youtubeId, 
-              language 
-            })
+          const audioResult = await extractAndTranscribeAudio(youtubeId, { 
+            language: language === 'auto' ? undefined : language 
           });
           
-          if (audioResponse.ok) {
-            const audioData = await audioResponse.json();
-            transcript = audioData.transcript;
+          if (audioResult && audioResult.transcript) {
+            transcript = audioResult.transcript;
             source = 'gladia-audio';
             console.log('✅ Audio transcription successful via Gladia');
+            console.log(`📊 Audio details: ${audioResult.processingInfo.audioFormat}, ${audioResult.processingInfo.durationSeconds}s`);
           } else {
-            const audioError = await audioResponse.json();
-            console.error('❌ Audio transcription failed:', audioError.error);
-            throw new Error(audioError.error || 'Audio transcription failed');
+            throw new Error('Audio transcription returned empty result');
           }
         } catch (audioError) {
           console.error('❌ All transcription methods failed:', audioError);
+          
+          // Enhanced error details for debugging
+          const errorMessage = audioError instanceof Error ? audioError.message : 'Unknown error';
+          console.error('❌ Detailed error:', {
+            youtubeId,
+            errorMessage,
+            errorType: audioError instanceof Error ? audioError.constructor.name : typeof audioError
+          });
           
           // All methods failed - return comprehensive error
           return NextResponse.json({
             error: 'Nie można pobrać transkrypcji dla tego filmu',
             details: 'Próbowaliśmy pobrać napisy i transkrypcję audio, ale żaden sposób nie zadziałał.',
+            technicalDetails: errorMessage,
             troubleshooting: {
               captionsAvailable: false,
               audioExtractionFailed: true,
               suggestions: [
                 'Sprawdź czy film ma włączone napisy automatyczne',
-                'Sprawdź czy film nie jest prywatny lub zablokowany',
+                'Sprawdź czy film nie jest prywatny lub zablokowany', 
+                'Sprawdź czy film nie jest dłuższy niż 30 minut',
                 'Spróbuj z innym filmem YouTube'
               ]
             }
