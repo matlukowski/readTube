@@ -9,6 +9,7 @@ import AnalyzeBar from '@/components/analyze/AnalyzeBar';
 import Header from '@/components/layout/Header';
 import PaymentModal from '@/components/payments/PaymentModal';
 import { YouTubeAuth } from '@/components/YouTubeAuth';
+import { ClerkSessionDebug } from '@/components/debug/ClerkSessionDebug';
 import { extractYouTubeId } from '@/components/analyze/AnalyzeBar';
 import { formatMinutesToTime } from '@/lib/stripe';
 import { useYouTubeTranscript } from '@/hooks/useYouTubeTranscript';
@@ -344,6 +345,9 @@ function AnalyzeContent() {
       <Header />
       
       <main className="container mx-auto px-4 py-8">
+        {/* Development Debug Panel */}
+        {isSignedIn && <ClerkSessionDebug />}
+        
         {/* YouTube Authorization Banner */}
         {isSignedIn && <YouTubeAuth variant="banner" />}
         {/* Back button when not on input step */}
