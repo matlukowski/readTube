@@ -10,6 +10,7 @@ import Header from '@/components/layout/Header';
 import PaymentModal from '@/components/payments/PaymentModal';
 import { extractYouTubeId } from '@/components/analyze/AnalyzeBar';
 import { formatMinutesToTime } from '@/lib/stripe';
+import { useYouTubeTranscript } from '@/hooks/useYouTubeTranscript';
 
 interface VideoDetails {
   youtubeId: string;
@@ -33,6 +34,7 @@ function AnalyzeContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { isSignedIn } = useUser();
+  const { extractTranscript } = useYouTubeTranscript();
   
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [currentStep, setCurrentStep] = useState<'input' | 'analyzing' | 'completed' | 'error'>('input');
@@ -136,12 +138,34 @@ function AnalyzeContent() {
       const videoDetails: VideoDetails = await detailsResponse.json();
       updateProgress('Pobieranie szczegółów filmu...', true);
 
-      // Step 2: Get transcript
-      updateProgress('Generowanie transkrypcji...');
+      // Step 2: Try client-side extraction first
+      updateProgress('Pobieranie napisów z YouTube...');
+      let transcript = null;
+      let transcriptSource = 'client';
+      
+      try {
+        // Attempt client-side extraction
+        console.log('🌐 Attempting client-side transcript extraction...');
+        transcript = await extractTranscript(youtubeId);
+        
+        if (transcript) {
+          console.log('✅ Client-side extraction successful');
+          updateProgress('Pobieranie napisów z YouTube...', true);
+        }
+      } catch (clientError) {
+        console.warn('⚠️ Client-side extraction failed:', clientError);
+      }
+      
+      // Step 2b: Send transcript to server (or attempt server extraction as fallback)
+      updateProgress('Przetwarzanie transkrypcji...');
       const transcriptResponse = await fetch('/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ youtubeId, language })
+        body: JSON.stringify({ 
+          youtubeId, 
+          language,
+          transcript // Send client transcript if available
+        })
       });
 
       if (!transcriptResponse.ok) {
@@ -159,11 +183,20 @@ function AnalyzeContent() {
           return; // Don't throw error, just show payment modal
         }
         
+        // If server requires client extraction and we haven't done it yet
+        if (errorData.requiresClientExtraction && !transcript) {
+          throw new Error('Nie udało się pobrać napisów z YouTube. Spróbuj ponownie lub wybierz inny film.');
+        }
+        
         throw new Error(errorData.error || 'Nie udało się wygenerować transkrypcji');
       }
 
-      const { transcript } = await transcriptResponse.json();
-      updateProgress('Generowanie transkrypcji...', true);
+      const transcriptData = await transcriptResponse.json();
+      transcript = transcriptData.transcript;
+      transcriptSource = transcriptData.source || transcriptSource;
+      
+      console.log(`📊 Transcript ready (source: ${transcriptSource})`);
+      updateProgress('Przetwarzanie transkrypcji...', true);
 
       // Step 3: Generate summary
       updateProgress('Tworzenie podsumowania AI...');
