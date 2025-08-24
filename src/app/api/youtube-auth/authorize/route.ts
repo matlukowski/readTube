@@ -6,7 +6,7 @@ import { generateAuthUrl } from '@/lib/youtube-oauth';
  * Start YouTube OAuth2 authorization flow
  * GET /api/youtube-auth/authorize
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     // Authenticate user
     const { userId } = await auth();

@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     console.log(`🔑 Processing YouTube OAuth callback for user: ${userId}`);
 
     // Exchange code for tokens
-    const tokens = await exchangeCodeForTokens(code, userId);
+    await exchangeCodeForTokens(code, userId);
     
     console.log(`✅ YouTube authorization successful for user: ${userId}`);
 

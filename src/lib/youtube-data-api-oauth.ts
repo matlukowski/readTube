@@ -31,13 +31,21 @@ interface TranscriptEntry {
   duration: number;
 }
 
+interface YouTubeThumbnails {
+  default?: { url: string; width: number; height: number };
+  medium?: { url: string; width: number; height: number };
+  high?: { url: string; width: number; height: number };
+  standard?: { url: string; width: number; height: number };
+  maxres?: { url: string; width: number; height: number };
+}
+
 interface VideoMetadata {
   title: string;
   description: string;
   duration: string;
   channel: string;
   publishedAt: string;
-  thumbnails: any;
+  thumbnails: YouTubeThumbnails;
 }
 
 /**
