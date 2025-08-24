@@ -186,16 +186,50 @@ export async function GET(request: NextRequest) {
     
     const errorMessage = lastError instanceof Error ? lastError.message : 'Unknown error';
     
-    if (errorMessage.includes('Sign in to confirm')) {
+    // Enhanced error detection and messaging
+    if (errorMessage.includes('Sign in to confirm') || errorMessage.includes('bot') || errorMessage.includes('captcha')) {
       return NextResponse.json({ 
-        error: 'YouTube requires verification. Try a different video or wait a moment and try again.',
-        details: 'The server is being rate-limited by YouTube.'
+        error: 'YouTube wykrył automatyczne requesty i blokuje dostęp',
+        details: 'Zalecamy użycie autoryzacji YouTube OAuth2 dla stabilnego dostępu do filmów.',
+        recommendation: 'Autoryzuj YouTube na stronie głównej aplikacji',
+        technicalDetails: errorMessage
       }, { status: 429 });
     }
     
+    if (errorMessage.includes('Video unavailable') || errorMessage.includes('private') || errorMessage.includes('deleted')) {
+      return NextResponse.json({ 
+        error: 'Film nie jest dostępny',
+        details: 'Film może być prywatny, usunięty lub ograniczony geograficznie.',
+        suggestion: 'Spróbuj z innym publicznie dostępnym filmem',
+        technicalDetails: errorMessage
+      }, { status: 404 });
+    }
+    
+    if (errorMessage.includes('No formats found') || errorMessage.includes('No audio formats')) {
+      return NextResponse.json({ 
+        error: 'Brak dostępnych formatów audio dla tego filmu',
+        details: 'YouTube może ograniczać dostęp do audio dla tego konkretnego filmu.',
+        suggestion: 'Spróbuj z filmem z innego kanału lub użyj autoryzacji YouTube',
+        technicalDetails: errorMessage
+      }, { status: 422 });
+    }
+    
+    // Generic error with helpful suggestions
     return NextResponse.json({ 
-      error: 'Failed to extract audio after multiple attempts',
-      details: errorMessage
+      error: 'Nie udało się pobrać audio po kilku próbach',
+      details: 'YouTube coraz częściej blokuje automatyczne pobieranie audio.',
+      recommendations: [
+        '🔐 Autoryzuj YouTube OAuth2 dla pewnego dostępu',
+        '🎬 Spróbuj z innym filmem YouTube',
+        '📝 Wybierz film który ma widoczne napisy'
+      ],
+      technicalDetails: errorMessage,
+      debugInfo: {
+        attempts: maxRetries,
+        userAgentsUsed: USER_AGENTS.length,
+        ytdlCoreVersion: 'Using @distube/ytdl-core',
+        serverLocation: 'Vercel Edge Runtime'
+      }
     }, { status: 500 });
 
   } catch (error) {

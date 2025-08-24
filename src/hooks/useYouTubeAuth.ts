@@ -75,14 +75,25 @@ export function useYouTubeAuth(): UseYouTubeAuthResult {
       const response = await fetch('/api/youtube-auth/authorize');
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to start authorization');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        
+        // Enhanced error messages based on status
+        let enhancedError = errorData.error || 'Failed to start authorization';
+        
+        if (response.status === 500) {
+          enhancedError = 'Konfiguracja OAuth2 jest niepoprawna. Sprawdź zmienne środowiskowe GOOGLE_CLIENT_ID i GOOGLE_CLIENT_SECRET.';
+        } else if (response.status === 401) {
+          enhancedError = 'Nie jesteś zalogowany. Zaloguj się najpierw do aplikacji.';
+        }
+        
+        console.error('❌ OAuth2 config error:', errorData.details || enhancedError);
+        throw new Error(enhancedError);
       }
 
       const data = await response.json();
       
       if (!data.authUrl) {
-        throw new Error('No authorization URL received');
+        throw new Error('No authorization URL received from server');
       }
 
       console.log('🚀 Redirecting to YouTube authorization...');
@@ -95,6 +106,11 @@ export function useYouTubeAuth(): UseYouTubeAuthResult {
       console.error('❌ YouTube authorization failed:', err);
       setError(errorMessage);
       setIsAuthorizing(false);
+      
+      // Log additional debug info in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔧 Debug OAuth2 config at: /api/youtube-auth/debug');
+      }
     }
   }, []);
 

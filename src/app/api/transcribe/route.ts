@@ -165,31 +165,50 @@ export async function POST(request: NextRequest) {
           });
           
           // Final failure - no transcription method worked
+          // Check if user is authorized for YouTube OAuth2
+          const hasYouTubeAuth = await hasValidYouTubeAuth(userId);
+          
           return NextResponse.json({
             error: 'Nie można pobrać transkrypcji dla tego filmu',
-            details: 'Próbowaliśmy kilka metod transkrypcji, ale żadna nie zadziałała.',
+            details: hasYouTubeAuth 
+              ? 'Ten film nie ma dostępnych napisów ani możliwości ekstrakcji audio.' 
+              : 'Autoryzacja YouTube znacznie zwiększy szanse powodzenia transkrypcji.',
             technicalDetails: errorMessage,
+            userAuthStatus: {
+              youtubeOAuth2: hasYouTubeAuth,
+              clerkAuth: !!userId
+            },
             troubleshooting: {
               strategiesTried: [
-                'YouTube OAuth2 Data API (not authorized or failed)',
-                'YouTube Data API v3 with API key (failed or unavailable)',
-                'YouTube unofficial captions (failed or unavailable)',
-                'Audio extraction + Gladia API (failed)'
+                hasYouTubeAuth ? 'YouTube OAuth2 Data API (authorized, but no captions)' : 'YouTube OAuth2 Data API (NOT AUTHORIZED)',
+                'YouTube Data API v3 with API key (failed or no captions)',
+                'YouTube unofficial captions (failed or no captions)',
+                'Audio extraction + Gladia API (blocked by YouTube)'
               ],
+              primaryRecommendation: hasYouTubeAuth 
+                ? 'Spróbuj z innym filmem który ma napisy'
+                : '🔐 AUTORYZUJ YOUTUBE dla 10x lepszych rezultatów',
               possibleReasons: [
                 'Film nie ma napisów ani dostępnego audio',
-                'YouTube blokuje requesty (bot detection)',
-                'Film jest prywatny lub zablokowany',
+                'YouTube agresywnie blokuje nieautoryzowane requesty',
+                'Film może być prywatny, zablokowany lub ograniczony',
                 'Film jest dłuższy niż 60 minut',
-                'Problemy z Gladia API'
+                hasYouTubeAuth ? 'Ten konkretny film ma ograniczone napisy' : 'Brak autoryzacji YouTube OAuth2'
               ],
-              gladiaApiKeyPresent: !!process.env.GLADIA_API_KEY,
-              suggestions: [
-                'Autoryzuj YouTube (przycisk w aplikacji) dla najlepszej jakości napisów',
-                'Spróbuj z innym filmem YouTube',
-                'Sprawdź czy film ma napisy lub jest publicznie dostępny',
-                'Sprawdź czy GLADIA_API_KEY jest poprawny'
-              ]
+              suggestions: hasYouTubeAuth ? [
+                'Spróbuj z filmem który ma widoczne napisy na YouTube',
+                'Wybierz film z popularnego kanału (lepsze napisy)',
+                'Sprawdź czy film jest publicznie dostępny'
+              ] : [
+                '🎯 KROK 1: Autoryzuj YouTube (niebieski przycisk na stronie)',
+                '🎯 KROK 2: Spróbuj ponownie - OAuth2 daje dostęp do wszystkich napisów',
+                'Alternatywnie: spróbuj z filmem który ma widoczne napisy'
+              ],
+              debugInfo: {
+                gladiaApiKeyPresent: !!process.env.GLADIA_API_KEY,
+                youtubeApiKeyPresent: !!process.env.YOUTUBE_API_KEY,
+                oauthConfigPresent: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
+              }
             }
           }, { status: 422 });
         }
