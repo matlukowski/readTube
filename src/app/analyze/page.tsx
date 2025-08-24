@@ -12,6 +12,7 @@ import { extractYouTubeId } from '@/components/analyze/AnalyzeBar';
 import { formatMinutesToTime } from '@/lib/stripe';
 import { useYouTubeTranscript } from '@/hooks/useYouTubeTranscript';
 import { useMultiModalExtraction } from '@/hooks/useAudioExtraction';
+import { extractAndTranscribeClientSide } from '@/lib/client-audio-extractor';
 
 interface VideoDetails {
   youtubeId: string;
@@ -201,11 +202,56 @@ function AnalyzeContent() {
               updateProgress('Transkrypcja audio zakończona', true);
             }
           } catch (audioError) {
-            console.error('❌ Audio extraction fallback failed:', audioError);
-            throw new Error('Nie udało się pobrać napisów ani transkrypcji audio. Sprawdź czy film ma napisy lub nie jest prywatny.');
+            console.error('❌ Server audio extraction failed:', audioError);
+            
+            // Ultimate fallback: client-side audio extraction
+            console.log('🎵 Trying client-side audio extraction...');
+            try {
+              updateProgress('Próba transkrypcji audio w przeglądarce...');
+              
+              const clientTranscript = await extractAndTranscribeClientSide(youtubeId, {
+                language: language,
+                onProgress: updateProgress
+              });
+              
+              if (clientTranscript && clientTranscript.trim().length > 0) {
+                transcript = clientTranscript;
+                transcriptSource = 'client-side-audio';
+                console.log('✅ Client-side audio extraction successful');
+                updateProgress('Transkrypcja audio ukończona!', true);
+              } else {
+                throw new Error('Client-side extraction returned empty result');
+              }
+              
+            } catch (clientError) {
+              console.error('❌ Client-side audio extraction failed:', clientError);
+              throw new Error('Nie udało się pobrać napisów ani transkrypcji audio. Sprawdź czy film ma napisy lub nie jest prywatny.');
+            }
           }
         } else {
-          throw new Error(errorData.error || 'Nie udało się wygenerować transkrypcji');
+          // Server API error but no fallback available
+          console.log('🎵 Server failed, trying client-side audio extraction...');
+          try {
+            updateProgress('Próba transkrypcji audio w przeglądarce...');
+            
+            const clientTranscript = await extractAndTranscribeClientSide(youtubeId, {
+              language: language,
+              onProgress: updateProgress
+            });
+            
+            if (clientTranscript && clientTranscript.trim().length > 0) {
+              transcript = clientTranscript;
+              transcriptSource = 'client-side-audio';
+              console.log('✅ Client-side audio extraction successful');
+              updateProgress('Transkrypcja audio ukończona!', true);
+            } else {
+              throw new Error('Client-side extraction returned empty result');
+            }
+            
+          } catch (clientError) {
+            console.error('❌ Client-side audio extraction failed:', clientError);
+            throw new Error(errorData.error || 'Nie udało się wygenerować transkrypcji');
+          }
         }
       }
 
