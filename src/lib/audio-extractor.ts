@@ -22,7 +22,7 @@ export interface AudioExtractionResult {
 
 export interface AudioExtractionOptions {
   language?: string;
-  maxDuration?: number; // in seconds, default 30 minutes
+  maxDuration?: number; // in seconds, default 60 minutes
 }
 
 /**
@@ -32,7 +32,7 @@ export async function extractAndTranscribeAudio(
   youtubeId: string,
   options: AudioExtractionOptions = {}
 ): Promise<AudioExtractionResult> {
-  const { language = 'auto', maxDuration = 30 * 60 } = options;
+  const { language = 'auto', maxDuration = 60 * 60 } = options;
   
   console.log(`🎵 Starting audio extraction and transcription for ${youtubeId}`);
   console.log(`🔧 Debug: Options: ${JSON.stringify(options)}`);
@@ -240,7 +240,7 @@ export async function checkAudioExtractionAvailability(youtubeId: string): Promi
     // Quick check if video is accessible
     const info = await ytdl.getBasicInfo(videoUrl);
     const durationSeconds = parseInt(info.videoDetails.lengthSeconds || '0');
-    const maxDuration = 30 * 60; // 30 minutes
+    const maxDuration = 60 * 60; // 60 minutes
     
     const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
     
