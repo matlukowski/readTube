@@ -59,7 +59,8 @@ export class GladiaClient {
       
       // Create FormData for multipart upload
       const formData = new FormData();
-      const audioBlob = new Blob([audioBuffer], { type: 'audio/mp3' });
+      // Convert Buffer to Uint8Array for Blob compatibility
+      const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: 'audio/mp3' });
       formData.append('audio', audioBlob, 'audio.mp3');
       
       const response = await fetch(`${this.baseUrl}/upload`, {

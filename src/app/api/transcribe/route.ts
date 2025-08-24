@@ -4,7 +4,7 @@ import { transcribeRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
 import { checkUsageLimit, logVideoUsage } from '@/lib/usageMiddleware';
 import { YouTubeAPI } from '@/lib/youtube';
-import { extractAndTranscribeAudio, checkAudioExtractionAvailability } from '@/lib/audio-extractor';
+import { extractAndTranscribeAudio } from '@/lib/audio-extractor';
 
 
 
