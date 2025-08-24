@@ -94,34 +94,98 @@ function selectBestTrack(tracks: CaptionTrack[], preferredLanguages: string[]): 
   return anyTrack;
 }
 
-// Fetch transcript XML from timedtext endpoint
+// Fetch transcript from timedtext endpoint (try different formats)
 async function fetchTimedtext(baseUrl: string): Promise<string> {
-  try {
-    console.log(`📥 Fetching captions from: ${baseUrl}`);
-    
-    const response = await fetch(baseUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Accept': 'text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5',
-        'Accept-Language': 'pl,en-US;q=0.7,en;q=0.3',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
+  // Try different formats in order of preference
+  const formats = [
+    { name: 'json3', param: '&fmt=json3' },
+    { name: 'srv3', param: '&fmt=srv3' }, 
+    { name: 'xml', param: '' } // original XML format
+  ];
+  
+  for (const format of formats) {
+    try {
+      const urlWithFormat = baseUrl.includes('?') 
+        ? `${baseUrl}${format.param}` 
+        : `${baseUrl}?${format.param}`;
+      
+      console.log(`📥 Trying ${format.name} format: ${urlWithFormat}`);
+      
+      const response = await fetch(urlWithFormat, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Accept': format.name === 'json3' ? 'application/json,*/*' : 'text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5',
+          'Accept-Language': 'pl,en-US;q=0.7,en;q=0.3',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Referer': 'https://www.youtube.com/',
+          'Origin': 'https://www.youtube.com',
+          'DNT': '1',
+          'Connection': 'keep-alive',
+          'Sec-Fetch-Dest': 'empty',
+          'Sec-Fetch-Mode': 'cors',
+          'Sec-Fetch-Site': 'same-origin'
+        }
+      });
+
+      if (!response.ok) {
+        console.log(`❌ ${format.name} format failed: HTTP ${response.status}`);
+        continue; // Try next format
       }
-    });
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      const content = await response.text();
+      console.log(`✅ Retrieved ${format.name} content: ${content.length} characters`);
+      
+      if (content.length > 0) {
+        // Return content as-is, parsing will be handled by caller
+        return content;
+      } else {
+        console.log(`⚠️ ${format.name} format returned empty content`);
+        continue; // Try next format
+      }
+    } catch (formatError) {
+      console.log(`❌ ${format.name} format error:`, formatError);
+      continue; // Try next format
     }
+  }
+  
+  // If all formats failed
+  throw new Error('All caption formats failed to retrieve content');
+}
 
-    const xmlContent = await response.text();
-    console.log(`✅ Retrieved XML content: ${xmlContent.length} characters`);
+// Parse JSON3 caption format
+function parseJson3Format(jsonContent: string): string {
+  try {
+    const data = JSON.parse(jsonContent);
     
-    return xmlContent;
+    // JSON3 format has events array with segments
+    if (data?.events) {
+      const textSegments: string[] = [];
+      
+      for (const event of data.events) {
+        if (event?.segs) {
+          for (const segment of event.segs) {
+            if (segment?.utf8) {
+              textSegments.push(segment.utf8.trim());
+            }
+          }
+        }
+      }
+      
+      const text = textSegments
+        .join(' ')
+        .replace(/\n/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+        
+      console.log(`📝 Parsed JSON3 format: ${text.length} characters`);
+      return text;
+    }
+    
+    console.warn('No events found in JSON3 format');
+    return '';
   } catch (error) {
-    console.error('Failed to fetch timedtext:', error);
-    throw error;
+    console.error('Failed to parse JSON3 format:', error);
+    return '';
   }
 }
 
@@ -236,18 +300,33 @@ export async function getYouTubeTranscriptDirect(videoId: string): Promise<strin
       return null;
     }
 
-    // Step 5: Fetch transcript XML
-    const xmlContent = await fetchTimedtext(selectedTrack.baseUrl);
+    // Step 5: Fetch transcript content
+    const transcriptContent = await fetchTimedtext(selectedTrack.baseUrl);
     
-    // Step 6: Parse XML to snippets
-    const snippets = parseTimedtextXML(xmlContent);
-    if (snippets.length === 0) {
-      console.log(`⚠️ No transcript snippets parsed from XML`);
+    // Step 6: Parse transcript content based on format
+    let transcript: string;
+    
+    // Check if we have content to parse
+    if (!transcriptContent || transcriptContent.length === 0) {
+      console.log(`⚠️ No transcript content to parse`);
       return null;
     }
+    
+    // Try to determine if it's JSON format or XML
+    if (typeof transcriptContent === 'string' && transcriptContent.trim().startsWith('{')) {
+      // Parse JSON3 format (content was returned raw from fetchTimedtext)
+      transcript = parseJson3Format(transcriptContent);
+    } else {
+      // Parse XML format to snippets
+      const snippets = parseTimedtextXML(transcriptContent);
+      if (snippets.length === 0) {
+        console.log(`⚠️ No transcript snippets parsed from XML`);
+        return null;
+      }
 
-    // Step 7: Convert to clean text
-    const transcript = snippetsToText(snippets);
+      // Convert snippets to clean text
+      transcript = snippetsToText(snippets);
+    }
     
     if (transcript.length === 0) {
       console.log(`⚠️ Transcript is empty after cleaning`);
