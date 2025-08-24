@@ -23,10 +23,21 @@ interface GladiaUploadResponse {
   id: string;
 }
 
+interface GladiaFileUploadResponse {
+  audio_url: string;
+  audio_metadata: {
+    id: string;
+    filename: string;
+    extension: string;
+    size: number;
+    audio_duration: number;
+    number_of_channels: number;
+  };
+}
+
 interface GladiaConfig {
   language?: string;
   diarization?: boolean;
-  code_switching?: boolean;
   custom_vocabulary?: string[];
 }
 
@@ -39,14 +50,53 @@ export class GladiaClient {
   }
 
   /**
-   * Upload audio for transcription using JSON with base64 encoding
+   * Upload audio file to Gladia using multipart/form-data
+   */
+  async uploadFile(audioBuffer: Buffer): Promise<GladiaFileUploadResponse> {
+    try {
+      console.log('📤 Uploading audio file to Gladia /v2/upload...');
+      console.log(`🔧 Debug: Buffer size: ${audioBuffer.length} bytes`);
+      
+      // Create FormData for multipart upload
+      const formData = new FormData();
+      const audioBlob = new Blob([audioBuffer], { type: 'audio/mp3' });
+      formData.append('audio', audioBlob, 'audio.mp3');
+      
+      const response = await fetch(`${this.baseUrl}/upload`, {
+        method: 'POST',
+        headers: {
+          'x-gladia-key': this.apiKey,
+        },
+        body: formData
+      });
+
+      console.log(`🔧 Debug: Upload response status: ${response.status}`);
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error(`❌ File upload failed: ${response.status} - ${errorData}`);
+        throw new Error(`File upload failed: ${response.status} - ${errorData}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ File uploaded successfully, audio_url:', result.audio_url);
+      
+      return result;
+    } catch (error) {
+      console.error('❌ File upload failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Upload audio for transcription using new v2 workflow
    */
   async uploadAudio(audioStream: ReadableStream | Buffer, config?: GladiaConfig): Promise<GladiaUploadResponse> {
     try {
-      console.log('🎵 Uploading audio to Gladia API...');
+      console.log('🎵 Starting Gladia v2 workflow...');
       console.log(`🔧 Debug: Audio stream type: ${audioStream instanceof Buffer ? 'Buffer' : audioStream instanceof ReadableStream ? 'ReadableStream' : 'Unknown'}`);
       
-      // Convert audio to Buffer first
+      // Step 1: Convert audio to Buffer first
       let audioBuffer: Buffer;
       if (audioStream instanceof Buffer) {
         audioBuffer = audioStream;
@@ -68,27 +118,25 @@ export class GladiaClient {
         throw new Error('Unsupported audio stream type');
       }
 
-      // Convert buffer to base64
-      const base64Audio = audioBuffer.toString('base64');
-      console.log(`🔧 Debug: Converted to base64: ${Math.round(base64Audio.length / 1024)}KB`);
+      // Step 2: Upload file to get audio_url
+      console.log('📤 Step 2: Uploading file to Gladia...');
+      const uploadResult = await this.uploadFile(audioBuffer);
+      console.log(`✅ File uploaded, audio_url: ${uploadResult.audio_url}`);
 
-      // Prepare JSON payload
+      // Step 3: Request transcription using audio_url
+      console.log('🚀 Step 3: Starting transcription...');
       const payload = {
-        audio: base64Audio,
-        audio_format: 'mp3',
+        audio_url: uploadResult.audio_url,
         language: config?.language || 'auto',
         diarization: config?.diarization || false,
-        code_switching: config?.code_switching || true,
-        custom_vocabulary: config?.custom_vocabulary || [],
-        output_format: 'json'
+        custom_vocabulary: config?.custom_vocabulary || []
       };
 
       console.log(`🔧 Debug: Making POST request to ${this.baseUrl}/pre-recorded`);
-      console.log(`🔧 Debug: Payload config: ${JSON.stringify({
+      console.log(`🔧 Debug: Transcription config: ${JSON.stringify({
         language: payload.language,
         diarization: payload.diarization,
-        code_switching: payload.code_switching,
-        audio_size_kb: Math.round(base64Audio.length / 1024)
+        has_audio_url: !!payload.audio_url
       })}`);
       
       const response = await fetch(`${this.baseUrl}/pre-recorded`, {
@@ -100,21 +148,21 @@ export class GladiaClient {
         body: JSON.stringify(payload)
       });
 
-      console.log(`🔧 Debug: Gladia upload response status: ${response.status}`);
+      console.log(`🔧 Debug: Transcription response status: ${response.status}`);
 
       if (!response.ok) {
         const errorData = await response.text();
-        console.error(`❌ Gladia upload failed: ${response.status} - ${errorData}`);
-        throw new Error(`Gladia upload failed: ${response.status} - ${errorData}`);
+        console.error(`❌ Transcription request failed: ${response.status} - ${errorData}`);
+        throw new Error(`Transcription request failed: ${response.status} - ${errorData}`);
       }
 
       const result = await response.json();
-      console.log('✅ Audio uploaded to Gladia, transcription ID:', result.id);
-      console.log(`🔧 Debug: Upload result: ${JSON.stringify(result)}`);
+      console.log('✅ Transcription started, ID:', result.id);
+      console.log(`🔧 Debug: Transcription result: ${JSON.stringify(result)}`);
       
       return result;
     } catch (error) {
-      console.error('❌ Gladia upload failed:', error);
+      console.error('❌ Gladia v2 workflow failed:', error);
       throw error;
     }
   }

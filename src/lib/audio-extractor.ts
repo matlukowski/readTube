@@ -160,7 +160,6 @@ export async function extractAndTranscribeAudio(
       const transcriptionConfig = {
         language: language === 'auto' ? undefined : language,
         diarization: false, // Disable for faster processing
-        code_switching: true, // Enable multiple languages
       };
       console.log(`🔧 Debug: Gladia config: ${JSON.stringify(transcriptionConfig)}`);
       

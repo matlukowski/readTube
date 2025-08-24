@@ -4,8 +4,7 @@ import { transcribeRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
 import { checkUsageLimit, logVideoUsage } from '@/lib/usageMiddleware';
 import { YouTubeAPI } from '@/lib/youtube';
-import { extractAudioWithYtDlp, checkYtDlpAvailability } from '@/lib/yt-dlp-audio';
-import { createGladiaClient } from '@/lib/gladia-client';
+import { extractAndTranscribeAudio, checkAudioExtractionAvailability } from '@/lib/audio-extractor';
 
 
 
@@ -71,51 +70,26 @@ export async function POST(request: NextRequest) {
     let transcript = clientTranscript;
     let source = 'client';
     
-    // Skip client transcript for now - go straight to audio extraction
+    // Skip client transcript for now - go straight to audio extraction and transcription
     if (!transcript) {
       console.log('Starting audio extraction and transcription...');
       
       try {
-        // Check if yt-dlp is available
-        console.log('🔍 Checking yt-dlp availability...');
-        const ytDlpAvailable = await checkYtDlpAvailability();
-        
-        if (!ytDlpAvailable) {
-          throw new Error('yt-dlp is not installed or not available. Please install yt-dlp first.');
-        }
-        
-        console.log('✅ yt-dlp is available');
-        
-        // Extract audio using yt-dlp
-        console.log('🎵 Extracting audio with yt-dlp...');
-        const audioResult = await extractAudioWithYtDlp(youtubeId, {
-          format: 'mp3',
-          quality: 'best',
+        // Extract audio and transcribe using ytdl-core + Gladia API
+        console.log('🎵 Using ytdl-core for audio extraction...');
+        const result = await extractAndTranscribeAudio(youtubeId, {
+          language: language,
           maxDuration: 60 * 60 // 60 minutes
         });
         
-        console.log(`📊 Audio extracted: ${audioResult.title} (${Math.round(audioResult.size / 1024 / 1024)}MB)`);
-        
-        // Transcribe using Gladia API
-        console.log('🤖 Starting Gladia transcription...');
-        console.log(`🔧 Debug: GLADIA_API_KEY present: ${!!process.env.GLADIA_API_KEY}`);
-        
-        const gladiaClient = createGladiaClient();
-        const gladiaConfig = {
-          language: language === 'auto' ? undefined : language,
-          diarization: false, // Disable for faster processing
-          code_switching: true, // Enable multiple languages
-        };
-        
-        console.log(`🔧 Gladia config: ${JSON.stringify(gladiaConfig)}`);
-        
-        transcript = await gladiaClient.transcribeAudio(audioResult.audioBuffer, gladiaConfig, 300000); // 5 minute timeout
-        source = 'yt-dlp-gladia';
+        transcript = result.transcript;
+        source = result.source;
         
         console.log(`✅ Transcription completed: ${transcript ? transcript.length : 0} characters`);
+        console.log(`📊 Video processed: ${result.videoDetails.title}`);
         
         if (!transcript || transcript.trim().length === 0) {
-          throw new Error('Gladia returned empty transcription');
+          throw new Error('Audio transcription returned empty result');
         }
         
       } catch (audioError) {
@@ -126,7 +100,7 @@ export async function POST(request: NextRequest) {
         
         console.error('❌ Detailed error:', {
           youtubeId,
-          workflow: 'yt-dlp-gladia',
+          workflow: 'ytdl-core-gladia',
           error: errorMessage,
           errorType: audioError instanceof Error ? audioError.constructor.name : typeof audioError
         });
@@ -137,14 +111,13 @@ export async function POST(request: NextRequest) {
           details: 'Próbowaliśmy wyodrębnić audio z YouTube i przetworzyć go przez Gladia API, ale proces nie powiódł się.',
           technicalDetails: errorMessage,
           troubleshooting: {
-            ytDlpAvailable: await checkYtDlpAvailability(),
             gladiaApiKeyPresent: !!process.env.GLADIA_API_KEY,
             suggestions: [
-              'Sprawdź czy yt-dlp jest zainstalowany (pip install yt-dlp)',
               'Sprawdź czy GLADIA_API_KEY jest ustawiony',
               'Sprawdź czy film nie jest prywatny lub zablokowany', 
               'Sprawdź czy film nie jest dłuższy niż 60 minut',
-              'Spróbuj z innym filmem YouTube'
+              'Spróbuj z innym filmem YouTube',
+              'Sprawdź połączenie internetowe'
             ]
           }
         }, { status: 422 });
