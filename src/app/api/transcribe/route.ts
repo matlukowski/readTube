@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { checkUsageLimit, logVideoUsage } from '@/lib/usageMiddleware';
 import { YouTubeAPI } from '@/lib/youtube';
 import { extractAndTranscribeAudio } from '@/lib/audio-extractor';
+import { getYouTubeTranscriptWithRetry } from '@/lib/youtube-transcript-extractor';
 
 
 
@@ -70,54 +71,97 @@ export async function POST(request: NextRequest) {
     let transcript = clientTranscript;
     let source = 'client';
     
-    // Skip client transcript for now - go straight to audio extraction and transcription
+    // Multi-tier fallback strategy for transcription
     if (!transcript) {
-      console.log('Starting audio extraction and transcription...');
+      console.log('Starting multi-tier transcription workflow...');
       
+      // Strategy 1: Try YouTube official captions (works on Vercel)
+      console.log('📝 Strategy 1: Trying YouTube official captions...');
       try {
-        // Extract audio and transcribe using ytdl-core + Gladia API
-        console.log('🎵 Using ytdl-core for audio extraction...');
-        const result = await extractAndTranscribeAudio(youtubeId, {
-          language: language,
-          maxDuration: 60 * 60 // 60 minutes
-        });
-        
-        transcript = result.transcript;
-        source = result.source;
-        
-        console.log(`✅ Transcription completed: ${transcript ? transcript.length : 0} characters`);
-        console.log(`📊 Video processed: ${result.videoDetails.title}`);
-        
-        if (!transcript || transcript.trim().length === 0) {
-          throw new Error('Audio transcription returned empty result');
+        const youtubeTranscript = await getYouTubeTranscriptWithRetry(youtubeId, 2);
+        if (youtubeTranscript && youtubeTranscript.trim().length > 0) {
+          transcript = youtubeTranscript;
+          source = 'youtube-captions';
+          console.log(`✅ YouTube captions found: ${transcript.length} characters`);
+        } else {
+          console.log('⚠️ YouTube captions not available or empty');
         }
-        
-      } catch (audioError) {
-        console.error('❌ Audio transcription workflow failed:', audioError);
-        
-        // Enhanced error details for debugging
-        const errorMessage = audioError instanceof Error ? audioError.message : 'Unknown error';
-        
-        console.error('❌ Detailed error:', {
-          youtubeId,
-          workflow: 'ytdl-core-gladia',
-          error: errorMessage,
-          errorType: audioError instanceof Error ? audioError.constructor.name : typeof audioError
-        });
-        
-        // Return comprehensive error
+      } catch (captionsError) {
+        console.log('❌ YouTube captions failed:', captionsError instanceof Error ? captionsError.message : 'Unknown error');
+      }
+      
+      // Strategy 2: Fallback to audio extraction (may fail on Vercel due to bot detection)
+      if (!transcript) {
+        console.log('🎵 Strategy 2: Falling back to audio extraction + Gladia...');
+        try {
+          const result = await extractAndTranscribeAudio(youtubeId, {
+            language: language,
+            maxDuration: 60 * 60 // 60 minutes
+          });
+          
+          transcript = result.transcript;
+          source = result.source;
+          
+          console.log(`✅ Audio transcription completed: ${transcript ? transcript.length : 0} characters`);
+          console.log(`📊 Video processed: ${result.videoDetails.title}`);
+          
+          if (!transcript || transcript.trim().length === 0) {
+            throw new Error('Audio transcription returned empty result');
+          }
+        } catch (audioError) {
+          console.error('❌ Audio transcription workflow failed:', audioError);
+          
+          // Enhanced error details for debugging
+          const errorMessage = audioError instanceof Error ? audioError.message : 'Unknown error';
+          
+          console.error('❌ Detailed error:', {
+            youtubeId,
+            workflow: 'ytdl-core-gladia',
+            error: errorMessage,
+            errorType: audioError instanceof Error ? audioError.constructor.name : typeof audioError
+          });
+          
+          // Final failure - no transcription method worked
+          return NextResponse.json({
+            error: 'Nie można pobrać transkrypcji dla tego filmu',
+            details: 'Próbowaliśmy kilka metod transkrypcji, ale żadna nie zadziałała.',
+            technicalDetails: errorMessage,
+            troubleshooting: {
+              strategiesTried: [
+                'YouTube official captions (failed or unavailable)',
+                'Audio extraction + Gladia API (failed)'
+              ],
+              possibleReasons: [
+                'Film nie ma napisów ani dostępnego audio',
+                'YouTube blokuje requesty (bot detection)',
+                'Film jest prywatny lub zablokowany',
+                'Film jest dłuższy niż 60 minut',
+                'Problemy z Gladia API'
+              ],
+              gladiaApiKeyPresent: !!process.env.GLADIA_API_KEY,
+              suggestions: [
+                'Spróbuj z innym filmem YouTube',
+                'Sprawdź czy film ma napisy lub jest publicznie dostępny',
+                'Sprawdź czy GLADIA_API_KEY jest poprawny'
+              ]
+            }
+          }, { status: 422 });
+        }
+      }
+      
+      // If we still don't have transcript after both strategies
+      if (!transcript) {
         return NextResponse.json({
           error: 'Nie można pobrać transkrypcji dla tego filmu',
-          details: 'Próbowaliśmy wyodrębnić audio z YouTube i przetworzyć go przez Gladia API, ale proces nie powiódł się.',
-          technicalDetails: errorMessage,
+          details: 'Film nie ma dostępnych napisów ani możliwości ekstrakcji audio.',
           troubleshooting: {
-            gladiaApiKeyPresent: !!process.env.GLADIA_API_KEY,
+            strategiesTried: [
+              'YouTube official captions (not available)',
+              'Audio extraction (skipped or failed)'
+            ],
             suggestions: [
-              'Sprawdź czy GLADIA_API_KEY jest ustawiony',
-              'Sprawdź czy film nie jest prywatny lub zablokowany', 
-              'Sprawdź czy film nie jest dłuższy niż 60 minut',
-              'Spróbuj z innym filmem YouTube',
-              'Sprawdź połączenie internetowe'
+              'Spróbuj z filmem który ma napisy',
+              'Sprawdź czy film jest publicznie dostępny'
             ]
           }
         }, { status: 422 });
