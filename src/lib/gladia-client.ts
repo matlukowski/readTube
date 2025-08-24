@@ -39,26 +39,20 @@ export class GladiaClient {
   }
 
   /**
-   * Upload audio for transcription
+   * Upload audio for transcription using JSON with base64 encoding
    */
   async uploadAudio(audioStream: ReadableStream | Buffer, config?: GladiaConfig): Promise<GladiaUploadResponse> {
     try {
       console.log('🎵 Uploading audio to Gladia API...');
       console.log(`🔧 Debug: Audio stream type: ${audioStream instanceof Buffer ? 'Buffer' : audioStream instanceof ReadableStream ? 'ReadableStream' : 'Unknown'}`);
-      if (audioStream instanceof Buffer) {
-        console.log(`🔧 Debug: Buffer size: ${audioStream.length} bytes`);
-      }
-
-      const formData = new FormData();
       
-      // Convert stream/buffer to blob for FormData
-      let audioBlob: Blob;
+      // Convert audio to Buffer first
+      let audioBuffer: Buffer;
       if (audioStream instanceof Buffer) {
-        // Convert Buffer to Uint8Array for Blob compatibility
-        const uint8Array = new Uint8Array(audioStream);
-        audioBlob = new Blob([uint8Array], { type: 'audio/mpeg' });
+        audioBuffer = audioStream;
+        console.log(`🔧 Debug: Buffer size: ${audioBuffer.length} bytes`);
       } else if (audioStream instanceof ReadableStream) {
-        // Handle ReadableStream
+        // Convert ReadableStream to Buffer
         const reader = audioStream.getReader();
         const chunks: Uint8Array[] = [];
         
@@ -68,40 +62,42 @@ export class GladiaClient {
           chunks.push(value);
         }
         
-        const buffer = new Uint8Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0));
-        let offset = 0;
-        for (const chunk of chunks) {
-          buffer.set(chunk, offset);
-          offset += chunk.length;
-        }
-        
-        audioBlob = new Blob([buffer], { type: 'audio/mpeg' });
+        audioBuffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)));
+        console.log(`🔧 Debug: Converted stream to buffer: ${audioBuffer.length} bytes`);
       } else {
         throw new Error('Unsupported audio stream type');
       }
 
-      formData.append('audio', audioBlob, 'audio.mp3');
-      console.log(`🔧 Debug: Added audio blob to FormData`);
-      
-      // Add configuration
-      const transcriptionConfig = {
+      // Convert buffer to base64
+      const base64Audio = audioBuffer.toString('base64');
+      console.log(`🔧 Debug: Converted to base64: ${Math.round(base64Audio.length / 1024)}KB`);
+
+      // Prepare JSON payload
+      const payload = {
+        audio: base64Audio,
+        audio_format: 'mp3',
         language: config?.language || 'auto',
         diarization: config?.diarization || false,
         code_switching: config?.code_switching || true,
         custom_vocabulary: config?.custom_vocabulary || [],
         output_format: 'json'
       };
-      
-      formData.append('config', JSON.stringify(transcriptionConfig));
-      console.log(`🔧 Debug: Added config to FormData: ${JSON.stringify(transcriptionConfig)}`);
 
       console.log(`🔧 Debug: Making POST request to ${this.baseUrl}/pre-recorded`);
+      console.log(`🔧 Debug: Payload config: ${JSON.stringify({
+        language: payload.language,
+        diarization: payload.diarization,
+        code_switching: payload.code_switching,
+        audio_size_kb: Math.round(base64Audio.length / 1024)
+      })}`);
+      
       const response = await fetch(`${this.baseUrl}/pre-recorded`, {
         method: 'POST',
         headers: {
           'x-gladia-key': this.apiKey,
+          'Content-Type': 'application/json',
         },
-        body: formData
+        body: JSON.stringify(payload)
       });
 
       console.log(`🔧 Debug: Gladia upload response status: ${response.status}`);
