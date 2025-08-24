@@ -1,112 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { TranscriptList } from '@osiris-ai/youtube-captions-sdk';
+import { getYouTubeTranscriptWithRetry } from '@/lib/youtube-transcript-extractor';
 import { transcribeRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
 import { getAIService } from '@/lib/ai';
 
-// Get transcript from YouTube captions using modern SDK
+// Get transcript from YouTube using direct extraction (GetSubs-style)
 async function getYouTubeTranscript(youtubeId: string): Promise<string | null> {
-  try {
-    console.log(`🎬 Fetching YouTube captions for ${youtubeId}...`);
-    
-    // Pobierz listę dostępnych transkryptów
-    const transcriptList = await TranscriptList.fetch(youtubeId);
-    
-    if (!transcriptList) {
-      console.log(`❌ No transcript list available for ${youtubeId}`);
-      return null;
-    }
-    
-    console.log(`📋 Transcript list retrieved for ${youtubeId}`);
-    
-    // Próbuj różne języki w kolejności preferencji
-    const languagePreferences = [
-      ['pl', 'pl-PL'],           // Polski
-      ['en', 'en-US', 'en-GB'],  // Angielski
-      ['es', 'de', 'fr', 'it']   // Inne popularne języki
-    ];
-    
-    for (const languages of languagePreferences) {
-      try {
-        console.log(`🔍 Trying languages: ${languages.join(', ')}`);
-        const transcript = transcriptList.find(languages);
-        
-        if (transcript) {
-          console.log(`✅ Found transcript in languages: ${languages.join(', ')}`);
-          
-          // Pobierz zawartość transkryptu
-          const fetchedTranscript = await transcript.fetch();
-          
-          if (fetchedTranscript && fetchedTranscript.snippets) {
-            console.log(`📝 Retrieved ${fetchedTranscript.snippets.length} transcript snippets`);
-            
-            // Konwertuj snippets do czystego tekstu
-            const plainText = fetchedTranscript.snippets
-              .map((snippet: { text?: string }) => snippet.text || '')
-              .join(' ')
-              .replace(/\[.*?\]/g, '')     // Remove [Music], etc.
-              .replace(/\(.*?\)/g, '')     // Remove (noise), etc.
-              .replace(/&amp;/g, '&')
-              .replace(/&lt;/g, '<')
-              .replace(/&gt;/g, '>')
-              .replace(/&quot;/g, '"')
-              .replace(/&#39;/g, "'")
-              .replace(/\s+/g, ' ')
-              .trim();
-            
-            if (plainText.length > 0) {
-              console.log(`✅ Transcript extracted: ${plainText.length} characters`);
-              console.log(`📝 Preview: ${plainText.substring(0, 200)}...`);
-              return plainText;
-            }
-          }
-        }
-      } catch {
-        console.log(`Failed to fetch transcript for ${languages.join(', ')}, trying next...`);
-        continue;
-      }
-    }
-    
-    // Jeśli określone języki nie zadziałały, spróbuj pobrać pierwszy dostępny
-    console.log(`⚠️ No preferred languages found, trying first available transcript...`);
-    try {
-      // Spróbuj pobrać jakikolwiek dostępny transkrypt
-      // Użyjmy metody find bez argumentów, aby pobrać pierwszy dostępny
-      const transcript = transcriptList.find([]);
-      
-      if (transcript) {
-        // Pobierz pierwszy dostępny bez względu na język
-        const fetchedTranscript = await transcript.fetch();
-        
-        if (fetchedTranscript && fetchedTranscript.snippets) {
-          console.log(`✅ Found fallback transcript with ${fetchedTranscript.snippets.length} snippets`);
-          
-          const plainText = fetchedTranscript.snippets
-            .map((snippet: { text?: string }) => snippet.text || '')
-            .join(' ')
-            .replace(/\[.*?\]/g, '')
-            .replace(/\(.*?\)/g, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-            
-          if (plainText.length > 0) {
-            console.log(`✅ Fallback transcript extracted: ${plainText.length} characters`);
-            return plainText;
-          }
-        }
-      }
-    } catch (fallbackError) {
-      console.log(`❌ Could not fetch any available transcript:`, fallbackError);
-    }
-    
-    console.log(`❌ No captions found for ${youtubeId} using any method`);
-    return null;
-    
-  } catch (error) {
-    console.error(`❌ YouTube captions extraction failed:`, error);
-    return null;
-  }
+  console.log(`🚀 Starting GetSubs-style transcript extraction for ${youtubeId}`);
+  
+  // Use our robust direct extraction method
+  return await getYouTubeTranscriptWithRetry(youtubeId, 3);
 }
 
 export async function POST(request: NextRequest) {
