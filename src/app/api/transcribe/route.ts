@@ -9,18 +9,22 @@ import { getYouTubeTranscriptWithRetry } from '@/lib/youtube-transcript-extracto
 import { fetchYouTubeTranscript } from '@/lib/youtube-data-api';
 import { fetchYouTubeTranscriptOAuth } from '@/lib/youtube-data-api-oauth';
 import { hasValidGoogleYouTubeAuth } from '@/lib/google-oauth-helper';
+import { fetchYouTubeTranscriptYtDlp, isYtDlpExperimentEnabled } from '@/lib/youtube-transcript-ytdlp';
 
 
 
 export async function POST(request: NextRequest) {
   try {
+    // Read request body once at the beginning
+    const body = await request.json();
+    const { youtubeId, transcript: clientTranscript, language = 'pl' } = body;
+    
     // Try both authentication systems during migration
     let userId: string | null = null;
     let googleId: string | undefined = undefined;
     
     // Method 1: Try Google OAuth (new system)
     try {
-      const body = await request.clone().json();
       if (body.googleId && typeof body.googleId === 'string') {
         googleId = body.googleId;
         // Get user by googleId to get database userId
@@ -55,9 +59,6 @@ export async function POST(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    const body = await request.json();
-    const { youtubeId, transcript: clientTranscript, language = 'pl' } = body;
     
     // Validate the request
     transcribeRequestSchema.parse({ youtubeId });
@@ -156,6 +157,26 @@ export async function POST(request: NextRequest) {
         console.log('❌ YouTube OAuth2 failed:', oauthError instanceof Error ? oauthError.message : 'Unknown error');
       }
       
+      // Strategy 1.5: Try experimental yt-dlp method (EXPERIMENTAL - free captions)
+      if (!transcript && isYtDlpExperimentEnabled()) {
+        console.log('🔬 Strategy 1.5: Trying experimental yt-dlp captions extraction...');
+        try {
+          const startTime = Date.now();
+          const result = await fetchYouTubeTranscriptYtDlp(youtubeId, language === 'pl' ? 'pl' : 'en');
+          const duration = Date.now() - startTime;
+          
+          if (result.success && result.transcript && result.transcript.trim().length > 0) {
+            transcript = result.transcript;
+            console.log(`✅ yt-dlp transcript extraction successful: ${transcript.length} characters (${duration}ms)`);
+            console.log(`🔬 Method: ${result.method}, Language: ${result.language}`);
+          } else {
+            console.log('❌ yt-dlp transcript extraction returned empty result');
+          }
+        } catch (ytdlpError) {
+          console.log('❌ yt-dlp transcript extraction failed:', ytdlpError instanceof Error ? ytdlpError.message : 'Unknown error');
+        }
+      }
+      
       // Strategy 2: Try YouTube Data API v3 with API key (LIMITED - no caption download)
       if (!transcript && process.env.YOUTUBE_API_KEY) {
         console.log('🔑 Strategy 2: Trying YouTube Data API v3 with API key...');
@@ -191,7 +212,8 @@ export async function POST(request: NextRequest) {
       }
       
       // Strategy 4: Fallback to audio extraction (may fail on Vercel due to bot detection)
-      if (!transcript) {
+      // TEMPORARILY DISABLED FOR YT-DLP DEBUGGING
+      if (!transcript && false) {
         console.log('🎵 Strategy 4: Falling back to audio extraction + Gladia...');
         try {
           const result = await extractAndTranscribeAudio(youtubeId, {
