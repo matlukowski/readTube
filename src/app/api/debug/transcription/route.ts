@@ -1,20 +1,24 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
-import { hasValidYouTubeAuth } from '@/lib/youtube-oauth';
+import { hasValidGoogleYouTubeAuth, getUserByGoogleId } from '@/lib/google-oauth-helper';
 
 /**
  * Debug endpoint for transcription system status
- * GET /api/debug/transcription
+ * GET /api/debug/transcription?googleId=<user_google_id>
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    // Authenticate user
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Get Google ID from query params (for testing) or from session
+    const url = new URL(request.url);
+    const googleId = url.searchParams.get('googleId');
+    
+    if (!googleId) {
+      return NextResponse.json({ 
+        error: 'Google ID required', 
+        usage: 'Add ?googleId=<your_google_id> parameter'
+      }, { status: 400 });
     }
 
-    console.log(`🔧 Transcription system debug for user: ${userId}`);
+    console.log(`🔧 Transcription system debug for Google user: ${googleId}`);
 
     // Check all environment variables
     const envCheck = {
@@ -35,10 +39,13 @@ export async function GET() {
       DIRECT_URL: !!process.env.DIRECT_URL,
     };
 
-    // Check user authorization status
+    // Check user authorization status  
+    const user = await getUserByGoogleId(googleId);
     const userAuthStatus = {
-      clerkAuth: !!userId,
-      youtubeOAuth2: await hasValidYouTubeAuth(userId).catch(() => false)
+      googleAuth: !!user,
+      googleId: user?.googleId || null,
+      userExists: !!user,
+      youtubeOAuth2: await hasValidGoogleYouTubeAuth(googleId).catch(() => false)
     };
 
     // Strategy availability
@@ -110,7 +117,8 @@ export async function GET() {
     }
 
     return NextResponse.json({
-      userId,
+      googleId,
+      userInfo: user ? { id: user.id, email: user.email, name: user.name } : null,
       timestamp: new Date().toISOString(),
       environment: process.env.NODE_ENV,
       

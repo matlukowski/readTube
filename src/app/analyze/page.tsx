@@ -8,8 +8,6 @@ import { ArrowLeft, Clock, Eye, BookOpen, Save, ExternalLink, AlertCircle, Check
 import AnalyzeBar from '@/components/analyze/AnalyzeBar';
 import Header from '@/components/layout/Header';
 import PaymentModal from '@/components/payments/PaymentModal';
-import { YouTubeAuth } from '@/components/YouTubeAuth';
-import { ClerkSessionDebug } from '@/components/debug/ClerkSessionDebug';
 import { extractYouTubeId } from '@/components/analyze/AnalyzeBar';
 import { formatMinutesToTime } from '@/lib/stripe';
 import { useYouTubeTranscript } from '@/hooks/useYouTubeTranscript';
@@ -45,10 +43,7 @@ function AnalyzeContent() {
   const [currentStep, setCurrentStep] = useState<'input' | 'analyzing' | 'completed' | 'error'>('input');
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string>('');
-  const [progress, setProgress] = useState<{
-    step: string;
-    completed: boolean;
-  }[]>([]);
+  // Progress tracking simplified - using extractionMethod and overallProgress from hooks
   const [hasInitialized, setHasInitialized] = useState(false);
   const [language, setLanguage] = useState('pl');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -85,18 +80,7 @@ function AnalyzeContent() {
     }
   }, [searchParams, hasInitialized, isAnalyzing]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const updateProgress = (stepName: string, completed: boolean = false) => {
-    setProgress(prev => {
-      const existingIndex = prev.findIndex(p => p.step === stepName);
-      if (existingIndex >= 0) {
-        const updated = [...prev];
-        updated[existingIndex] = { step: stepName, completed };
-        return updated;
-      } else {
-        return [...prev, { step: stepName, completed }];
-      }
-    });
-  };
+  // Progress tracking simplified - no longer needed
 
   const handleAnalyze = async (youtubeIdOrUrl: string) => {
     if (!isSignedIn) {
@@ -114,7 +98,7 @@ function AnalyzeContent() {
     isAnalyzingRef.current = true;
     setCurrentStep('analyzing');
     setError('');
-    setProgress([]);
+    // Reset analysis state
     setAnalysisResult(null);
 
     try {
@@ -128,7 +112,6 @@ function AnalyzeContent() {
       console.log('🎯 Starting analysis for video:', youtubeId);
 
       // Step 1: Get video details
-      updateProgress('Pobieranie szczegółów filmu...');
       const detailsResponse = await fetch('/api/video-details', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -141,10 +124,10 @@ function AnalyzeContent() {
       }
 
       const videoDetails: VideoDetails = await detailsResponse.json();
-      updateProgress('Pobieranie szczegółów filmu...', true);
+      // Video details fetched
 
       // Step 2: Try client-side extraction first
-      updateProgress('Pobieranie napisów z YouTube...');
+      // Fetching transcript
       let transcript = null;
       let transcriptSource = 'client';
       
@@ -155,14 +138,14 @@ function AnalyzeContent() {
         
         if (transcript) {
           console.log('✅ Client-side extraction successful');
-          updateProgress('Pobieranie napisów z YouTube...', true);
+          // Transcript fetched successfully
         }
       } catch (clientError) {
         console.warn('⚠️ Client-side extraction failed:', clientError);
       }
       
       // Step 2b: Send transcript to server (or attempt server extraction as fallback)
-      updateProgress('Przetwarzanie transkrypcji...');
+      // Processing transcript
       const transcriptResponse = await fetch('/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -194,14 +177,14 @@ function AnalyzeContent() {
           
           // Last resort: try audio extraction as fallback
           try {
-            updateProgress('Próba transkrypcji audio...');
+            // Starting audio transcription
             const audioResult = await extractWithFallback(youtubeId, language);
             
             if (audioResult) {
               transcript = audioResult.transcript;
               transcriptSource = 'audio-fallback';
               console.log('✅ Audio extraction fallback successful');
-              updateProgress('Transkrypcja audio zakończona', true);
+              // Audio transcription completed
             }
           } catch (audioError) {
             console.error('❌ Server audio extraction failed:', audioError);
@@ -209,18 +192,18 @@ function AnalyzeContent() {
             // Ultimate fallback: client-side audio extraction
             console.log('🎵 Trying client-side audio extraction...');
             try {
-              updateProgress('Próba transkrypcji audio w przeglądarce...');
+              // Starting client-side transcription
               
               const clientTranscript = await extractAndTranscribeClientSide(youtubeId, {
                 language: language,
-                onProgress: updateProgress
+                // Progress handled by hook
               });
               
               if (clientTranscript && clientTranscript.trim().length > 0) {
                 transcript = clientTranscript;
                 transcriptSource = 'client-side-audio';
                 console.log('✅ Client-side audio extraction successful');
-                updateProgress('Transkrypcja audio ukończona!', true);
+                // Client-side transcription completed
               } else {
                 throw new Error('Client-side extraction returned empty result');
               }
@@ -234,7 +217,7 @@ function AnalyzeContent() {
           // Server API error but no fallback available
           console.log('🎵 Server failed, trying client-side audio extraction...');
           try {
-            updateProgress('Próba transkrypcji audio w przeglądarce...');
+            // Starting browser transcription fallback
             
             const clientTranscript = await extractAndTranscribeClientSide(youtubeId, {
               language: language,
@@ -245,7 +228,7 @@ function AnalyzeContent() {
               transcript = clientTranscript;
               transcriptSource = 'client-side-audio';
               console.log('✅ Client-side audio extraction successful');
-              updateProgress('Transkrypcja audio ukończona!', true);
+              // Browser transcription completed
             } else {
               throw new Error('Client-side extraction returned empty result');
             }
@@ -262,10 +245,10 @@ function AnalyzeContent() {
       transcriptSource = transcriptData.source || transcriptSource;
       
       console.log(`📊 Transcript ready (source: ${transcriptSource})`);
-      updateProgress('Przetwarzanie transkrypcji...', true);
+      // Transcript processed
 
       // Step 3: Generate summary
-      updateProgress('Tworzenie podsumowania AI...');
+      // Generating AI summary
       const summaryResponse = await fetch('/api/summarize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -283,10 +266,10 @@ function AnalyzeContent() {
       }
 
       const { summary } = await summaryResponse.json();
-      updateProgress('Tworzenie podsumowania AI...', true);
+      // AI summary generated
 
       // Step 4: Save to library
-      updateProgress('Zapisywanie do biblioteki...');
+      // Saving to library
       const saveResponse = await fetch('/api/library', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -305,7 +288,7 @@ function AnalyzeContent() {
       });
 
       await saveResponse.json();
-      updateProgress('Zapisywanie do biblioteki...', true);
+      // Saved to library successfully
 
       // Complete analysis
       setAnalysisResult({
@@ -332,7 +315,7 @@ function AnalyzeContent() {
     setCurrentStep('input');
     setAnalysisResult(null);
     setError('');
-    setProgress([]);
+    // Reset analysis state
     setHasInitialized(false);
     isAnalyzingRef.current = false;
     // Clear URL params
@@ -345,11 +328,7 @@ function AnalyzeContent() {
       <Header />
       
       <main className="container mx-auto px-4 py-8">
-        {/* Development Debug Panel */}
-        {isSignedIn && <ClerkSessionDebug />}
-        
-        {/* YouTube Authorization Banner */}
-        {isSignedIn && <YouTubeAuth variant="banner" />}
+        {/* YouTube Authorization Banner - using new auth system via AuthContext */}
         {/* Back button when not on input step */}
         {currentStep !== 'input' && (
           <button
@@ -423,45 +402,29 @@ function AnalyzeContent() {
         {/* Analyzing Step */}
         {currentStep === 'analyzing' && (
           <div className="max-w-2xl mx-auto text-center">
-            <h1 className="text-3xl font-bold mb-8">Analizuję film...</h1>
-            
-            <div className="space-y-4">
-              {progress.map((step, index) => (
-                <div key={index} className="flex items-center justify-between p-4 bg-base-100 rounded-lg">
-                  <div className="flex flex-col">
-                    <span className="font-medium">{step.step}</span>
-                    {extractionMethod === 'audio' && !step.completed && overallProgress && (
-                      <span className="text-sm text-base-content/60 mt-1">{overallProgress}</span>
-                    )}
+            <div className="bg-base-100 rounded-lg p-8 shadow-lg">
+              <h1 className="text-3xl font-bold mb-8">Analizuję film...</h1>
+              
+              <div className="flex flex-col items-center space-y-6">
+                {/* Main loading spinner */}
+                <div className="loading loading-spinner loading-lg text-primary"></div>
+                
+                {/* Simple progress message */}
+                <div className="text-lg text-base-content/80">
+                  Pobieram transkrypcję i tworzę podsumowanie AI
+                </div>
+                
+                {/* Additional progress info if available */}
+                {extractionMethod === 'audio' && overallProgress && (
+                  <div className="text-sm text-base-content/60 bg-base-200 px-4 py-2 rounded-full">
+                    {overallProgress}
                   </div>
-                  {step.completed ? (
-                    <CheckCircle className="w-5 h-5 text-success" />
-                  ) : (
-                    <span className="loading loading-spinner loading-sm"></span>
-                  )}
+                )}
+                
+                {/* Estimated time hint */}
+                <div className="text-sm text-base-content/50">
+                  To może potrwać 1-2 minuty...
                 </div>
-              ))}
-            </div>
-
-            {/* Additional info for audio extraction */}
-            {extractionMethod === 'audio' && (
-              <div className="mt-6 p-4 bg-info/10 border border-info/20 rounded-lg">
-                <div className="flex items-center gap-2 text-info mb-2">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="font-medium">Transkrypcja audio</span>
-                </div>
-                <p className="text-sm text-base-content/70">
-                  Napisy nie są dostępne dla tego filmu, więc pobieramy audio i tworzymy transkrypcję automatycznie. 
-                  Ten proces może potrwać kilka minut.
-                </p>
-              </div>
-            )}
-
-            <div className="mt-8">
-              <div className="text-sm text-base-content/60">
-                To może potrwać kilka minut...
               </div>
             </div>
           </div>

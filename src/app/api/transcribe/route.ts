@@ -8,7 +8,6 @@ import { extractAndTranscribeAudio } from '@/lib/audio-extractor';
 import { getYouTubeTranscriptWithRetry } from '@/lib/youtube-transcript-extractor';
 import { fetchYouTubeTranscript } from '@/lib/youtube-data-api';
 import { fetchYouTubeTranscriptOAuth } from '@/lib/youtube-data-api-oauth';
-import { hasValidYouTubeAuth } from '@/lib/youtube-oauth';
 import { hasValidGoogleYouTubeAuth } from '@/lib/google-oauth-helper';
 
 
@@ -130,7 +129,8 @@ export async function POST(request: NextRequest) {
           }
         } else {
           // Fallback to old Clerk system
-          hasAuth = await hasValidYouTubeAuth(userId);
+          // Clerk system no longer supported - migrate to Google OAuth
+          hasAuth = false;
           if (hasAuth) {
             // Note: This will fail because we changed the function signature
             // Users will need to migrate to Google OAuth
@@ -223,7 +223,7 @@ export async function POST(request: NextRequest) {
           
           // Final failure - no transcription method worked
           // Check if user is authorized for YouTube OAuth2
-          const hasYouTubeAuth = await hasValidYouTubeAuth(userId);
+          const hasYouTubeAuth = googleId ? await hasValidGoogleYouTubeAuth(googleId).catch(() => false) : false;
           
           return NextResponse.json({
             error: 'Nie można pobrać transkrypcji dla tego filmu',
