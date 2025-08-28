@@ -7,7 +7,7 @@ export default function Privacy() {
       <div className="prose prose-gray max-w-none">
         <h2>1. Informacje ogólne</h2>
         <p>
-          ReadTube ("my", "nas", "nasz") szanuje Twoją prywatność i zobowiązuje się do ochrony 
+          ReadTube (&quot;my&quot;, &quot;nas&quot;, &quot;nasz&quot;) szanuje Twoją prywatność i zobowiązuje się do ochrony 
           Twoich danych osobowych. Niniejsza polityka prywatności wyjaśnia, jak zbieramy, 
           używamy i chronimy Twoje informacje podczas korzystania z naszej aplikacji.
         </p>

@@ -4,8 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Search, Clock, Eye, BookOpen, Trash2, ExternalLink, AlertCircle, Save } from 'lucide-react';
+import { Search, Clock, Eye, MessageCircle, Trash2, ExternalLink, AlertCircle } from 'lucide-react';
 import Header from '@/components/layout/Header';
+import ChatModal from '@/components/library/ChatModal';
 import { formatDistanceToNow } from 'date-fns';
 
 interface LibraryVideo {
@@ -18,7 +19,6 @@ interface LibraryVideo {
   viewCount?: string;
   publishedAt?: string;
   description?: string;
-  summary: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -165,7 +165,7 @@ export default function LibraryPage() {
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-4">Moja Biblioteka</h1>
           <p className="text-xl text-base-content/70">
-            Przejrzyj swoje zapisane analizy filmów YouTube
+            Czatuj z AI o swoich przeanalizowanych filmach YouTube
           </p>
         </div>
 
@@ -206,12 +206,12 @@ export default function LibraryPage() {
         {/* Empty State */}
         {!loading && videos.length === 0 && !error && (
           <div className="text-center py-16">
-            <BookOpen className="w-16 h-16 text-base-content/30 mx-auto mb-4" />
+            <MessageCircle className="w-16 h-16 text-base-content/30 mx-auto mb-4" />
             <h3 className="text-xl font-semibold mb-2">Biblioteka jest pusta</h3>
             <p className="text-base-content/60 mb-6">
               {searchQuery 
                 ? 'Nie znaleziono filmów pasujących do wyszukiwania'
-                : 'Przeanalizuj pierwszy film YouTube, aby rozpocząć budowanie biblioteki'
+                : 'Przeanalizuj pierwszy film YouTube, aby móc czatować z AI o jego treści'
               }
             </p>
             <button
@@ -291,8 +291,8 @@ export default function LibraryPage() {
                         onClick={() => setSelectedVideo(video)}
                         className="btn btn-xs btn-primary"
                       >
-                        <BookOpen className="w-3 h-3 mr-1" />
-                        Czytaj
+                        <MessageCircle className="w-3 h-3 mr-1" />
+                        Czatuj
                       </button>
                     </div>
                   </div>
@@ -345,115 +345,13 @@ export default function LibraryPage() {
           </>
         )}
 
-        {/* Video Detail Modal */}
+        {/* Chat Modal */}
         {selectedVideo && (
-          <div className="modal modal-open">
-            <div className="modal-box w-11/12 max-w-4xl h-5/6 max-h-screen overflow-y-auto">
-              <div className="flex items-start justify-between mb-2 sm:mb-4">
-                <div className="flex-1 pr-4">
-                  <h3 className="font-bold text-lg line-clamp-2">{selectedVideo.title}</h3>
-                  <p className="text-sm text-base-content/60">{selectedVideo.channelName}</p>
-                </div>
-                <button
-                  className="btn btn-sm btn-circle btn-ghost"
-                  onClick={() => setSelectedVideo(null)}
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8">
-                {/* Video Details */}
-                <div className="lg:col-span-1">
-                  <div className="card bg-base-100 shadow-xl">
-                    <figure className="relative">
-                      <Image
-                        src={selectedVideo.thumbnail}
-                        alt={selectedVideo.title}
-                        width={320}
-                        height={180}
-                        className="w-full h-32 sm:h-48 object-cover"
-                      />
-                      {selectedVideo.duration && (
-                        <span className="absolute bottom-2 right-2 badge badge-neutral">
-                          <Clock className="w-3 h-3 mr-1" />
-                          {selectedVideo.duration}
-                        </span>
-                      )}
-                    </figure>
-                    
-                    <div className="card-body">
-                      <h2 className="card-title line-clamp-2">{selectedVideo.title}</h2>
-                      <p className="text-sm text-base-content/70">{selectedVideo.channelName}</p>
-                      
-                      <div className="flex items-center gap-4 text-sm text-base-content/60 mt-2">
-                        {selectedVideo.viewCount && (
-                          <span className="flex items-center gap-1">
-                            <Eye className="w-3 h-3" />
-                            {selectedVideo.viewCount}
-                          </span>
-                        )}
-                      </div>
-
-                      {selectedVideo.description && (
-                        <p className="text-sm mt-2 line-clamp-3">{selectedVideo.description}</p>
-                      )}
-
-                      <div className="card-actions justify-between mt-4">
-                        <a
-                          href={`https://youtube.com/watch?v=${selectedVideo.youtubeId}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="btn btn-sm btn-outline"
-                        >
-                          <ExternalLink className="w-4 h-4 mr-1" />
-                          YouTube
-                        </a>
-                        
-                        <span className="badge badge-success">
-                          <Save className="w-3 h-3 mr-1" />
-                          Zapisane
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Summary */}
-                <div className="lg:col-span-2">
-                  <div className="card bg-base-100 shadow-xl">
-                    <div className="card-body">
-                      <h2 className="card-title mb-4">
-                        <BookOpen className="w-5 h-5" />
-                        Podsumowanie filmu
-                      </h2>
-                      
-                      <div className="prose prose-sm max-w-none">
-                        {selectedVideo.summary.split('\n').map((paragraph, index) => (
-                          <p key={index} className="mb-4 leading-relaxed">
-                            {paragraph}
-                          </p>
-                        ))}
-                      </div>
-
-                      {/* Footer with paraphrase information */}
-                      <div className="mt-6 pt-4 border-t border-base-300">
-                        <p className="text-xs text-base-content/60 leading-relaxed">
-                          💡 <strong>Informacja:</strong> Powyższy tekst to parafraza słów autora filmu. 
-                          Aby zapoznać się w pełni z treścią, obejrzyj oryginalny film klikając przycisk{' '}
-                          <span className="font-medium">{'"YouTube"'}</span> pod miniaturką.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="modal-backdrop" onClick={() => setSelectedVideo(null)}>
-              <button>close</button>
-            </div>
-          </div>
+          <ChatModal 
+            video={selectedVideo}
+            isOpen={!!selectedVideo}
+            onClose={() => setSelectedVideo(null)}
+          />
         )}
 
         {/* Delete Confirmation Modal */}
@@ -483,7 +381,7 @@ export default function LibraryPage() {
                 </div>
                 
                 <p className="text-sm text-base-content/70 mt-3">
-                  ⚠️ Ta akcja jest nieodwracalna. Podsumowanie zostanie trwale usunięte.
+                  ⚠️ Ta akcja jest nieodwracalna. Film i transkrypcja zostaną trwale usunięte z biblioteki.
                 </p>
               </div>
 

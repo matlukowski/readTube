@@ -64,7 +64,7 @@ export default function Terms() {
 
         <h2>6. Ograniczenie odpowiedzialności</h2>
         <p>
-          ReadTube świadczy usługi "tak jak są". Nie gwarantujemy:
+          ReadTube świadczy usługi &quot;tak jak są&quot;. Nie gwarantujemy:
         </p>
         <ul>
           <li>100% dokładności generowanych podsumowań</li>

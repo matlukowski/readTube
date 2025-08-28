@@ -6,17 +6,81 @@ import { getOrCreateUser } from '@/lib/user';
 // GET /api/library - Get user's saved video summaries
 export async function GET(request: NextRequest) {
   try {
-    const { userId: clerkUserId } = await auth();
-    if (!clerkUserId) {
+    // Check authentication - try both Clerk and Google OAuth
+    let userId: string | null = null;
+    
+    const { searchParams } = new URL(request.url);
+    const youtubeIdParam = searchParams.get('youtubeId');
+    const googleIdParam = searchParams.get('googleId');
+    
+    // Method 1: Try Google OAuth (new system)  
+    if (googleIdParam) {
+      const user = await prisma.user.findUnique({
+        where: { googleId: googleIdParam },
+        select: { id: true }
+      });
+      if (user) {
+        userId = user.id;
+      }
+    }
+    
+    // Method 2: Fallback to Clerk (old system)
+    if (!userId) {
+      const clerkAuth = await auth();
+      if (clerkAuth.userId) {
+        const user = await prisma.user.findUnique({
+          where: { clerkId: clerkAuth.userId },
+          select: { id: true, googleId: true }
+        });
+        if (user) {
+          userId = user.id;
+        }
+      }
+    }
+    
+    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const user = await getOrCreateUser();
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    // If specific youtubeId is requested, return that video
+    if (youtubeIdParam) {
+      console.log(`📚 Getting specific video: ${youtubeIdParam} for user ${userId}`);
+      
+      const video = await prisma.video.findFirst({
+        where: {
+          youtubeId: youtubeIdParam,
+          userId: userId
+        },
+        select: {
+          id: true,
+          youtubeId: true,
+          title: true,
+          channelName: true,
+          duration: true,
+          viewCount: true,
+          publishedAt: true,
+          description: true,
+          thumbnail: true,
+          transcript: true,
+          createdAt: true,
+          updatedAt: true
+        }
+      });
+
+      if (!video) {
+        return NextResponse.json({
+          error: 'Film nie został znaleziony w bibliotece',
+          videos: []
+        }, { status: 404 });
+      }
+
+      return NextResponse.json({
+        videos: [video],
+        total: 1,
+        youtubeId: youtubeIdParam
+      });
     }
 
-    const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '10');
     const search = searchParams.get('search') || '';
@@ -26,9 +90,9 @@ export async function GET(request: NextRequest) {
 
     // Build where clause for search
     const whereClause = {
-      userId: user.id,
+      userId: userId,
       AND: [
-        { summary: { not: null } }, // Only videos with summaries
+        { transcript: { not: null } }, // Only videos with transcripts (for chat functionality)
         search ? {
           OR: [
             { title: { contains: search, mode: 'insensitive' as const } },
@@ -57,7 +121,6 @@ export async function GET(request: NextRequest) {
         viewCount: true,
         publishedAt: true,
         description: true,
-        summary: true,
         createdAt: true,
         updatedAt: true
       },
@@ -66,25 +129,12 @@ export async function GET(request: NextRequest) {
       take: limit
     });
 
-    // Parse summary JSON if it's stored as string
-    const videosWithParsedSummary = videos.map(video => ({
-      ...video,
-      summary: typeof video.summary === 'string' 
-        ? (() => {
-            try {
-              const parsed = JSON.parse(video.summary);
-              return parsed.summary || video.summary;
-            } catch {
-              return video.summary;
-            }
-          })()
-        : video.summary
-    }));
+    // Return videos as-is (no summary parsing needed)
 
-    console.log(`📚 Library: Retrieved ${videos.length} videos for user ${user.id}`);
+    console.log(`📚 Library: Retrieved ${videos.length} videos for user ${userId}`);
 
     return NextResponse.json({
-      videos: videosWithParsedSummary,
+      videos: videos,
       pagination: {
         page,
         limit,
@@ -126,27 +176,18 @@ export async function POST(request: NextRequest) {
       viewCount,
       publishedAt,
       description,
-      transcript,
-      summary
+      transcript
     } = body;
 
     // Validate required fields
-    if (!youtubeId || !title || !summary) {
+    if (!youtubeId || !title || !transcript) {
       return NextResponse.json(
-        { error: 'Missing required fields: youtubeId, title, summary' },
+        { error: 'Missing required fields: youtubeId, title, transcript' },
         { status: 400 }
       );
     }
 
     console.log(`💾 Saving video to library: ${youtubeId} - ${title}`);
-
-    // Create enriched summary object
-    const enrichedSummary = {
-      summary,
-      generatedAt: new Date().toISOString(),
-      language: 'pl',
-      savedToLibrary: true
-    };
 
     // Save or update video in library
     const savedVideo = await prisma.video.upsert({
@@ -161,7 +202,6 @@ export async function POST(request: NextRequest) {
         publishedAt: publishedAt ? new Date(publishedAt) : null,
         description,
         transcript,
-        summary: JSON.stringify(enrichedSummary),
         updatedAt: new Date()
       },
       create: {
@@ -174,8 +214,7 @@ export async function POST(request: NextRequest) {
         viewCount,
         publishedAt: publishedAt ? new Date(publishedAt) : null,
         description,
-        transcript,
-        summary: JSON.stringify(enrichedSummary)
+        transcript
       },
       select: {
         id: true,

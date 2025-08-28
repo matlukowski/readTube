@@ -32,6 +32,7 @@ model User {
   payments    Payment[]   // User's payment history
   usageLogs   UsageLog[]  // Detailed usage tracking
   youtubeAuth YouTubeAuth? // YouTube OAuth2 authorization
+  videoChats  VideoChat[] // User's video chat history
   
   @@map("users")
 }
@@ -59,13 +60,14 @@ model Video {
   publishedAt  DateTime?
   description  String?  @db.Text
   thumbnail    String
-  transcript   String?  @db.Text // Raw transcript
+  transcript   String?  @db.Text // Raw transcript from Gladia API
   summary      String?  @db.Text // AI-processed summary (contains both concise and detailed in JSON format)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   
   user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   favorites    Favorite[]
+  chats        VideoChat[] // Chat history for this video
   
   @@map("videos")
 }
@@ -127,4 +129,18 @@ model YouTubeAuth {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   @@map("youtube_auth")
+}
+
+model VideoChat {
+  id        String   @id @default(cuid())
+  videoId   String   // FK to Video
+  userId    String   // FK to User
+  question  String   @db.Text // User's question about the video
+  answer    String   @db.Text // AI's answer based on transcript
+  createdAt DateTime @default(now())
+  
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("video_chats")
 }

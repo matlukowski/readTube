@@ -127,11 +127,10 @@ async function downloadCaptionsWithYtDlp(
       stdio: ['ignore', 'pipe', 'pipe']
     });
     
-    let stdout = '';
     let stderr = '';
     
-    child.stdout.on('data', (data) => {
-      stdout += data.toString();
+    child.stdout.on('data', () => {
+      // Stdout data is not used in current implementation
     });
     
     child.stderr.on('data', (data) => {
@@ -314,7 +313,7 @@ function parseJson3Captions(content: string): string {
         if (event) {
           console.log(`🔬 [DEBUG] Event ${i}:`, JSON.stringify(event, null, 2));
           if (event.segs) {
-            console.log(`🔬 [DEBUG] Event ${i} segs content:`, event.segs.map((s: any) => s.utf8).join(''));
+            console.log(`🔬 [DEBUG] Event ${i} segs content:`, event.segs.map((s: {utf8?: string}) => s.utf8).join(''));
           }
         }
       }

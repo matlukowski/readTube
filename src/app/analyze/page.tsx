@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
-import Image from 'next/image';
-import { ArrowLeft, Clock, Eye, BookOpen, Save, ExternalLink, AlertCircle, CheckCircle } from 'lucide-react';
+// import Image from 'next/image'; // Unused after UI simplification
+import { ArrowLeft, AlertCircle } from 'lucide-react';
 import AnalyzeBar from '@/components/analyze/AnalyzeBar';
 import Header from '@/components/layout/Header';
 import PaymentModal from '@/components/payments/PaymentModal';
@@ -25,12 +25,7 @@ interface VideoDetails {
   description?: string;
 }
 
-interface AnalysisResult {
-  videoDetails: VideoDetails;
-  transcript: string;
-  summary: string;
-  saved: boolean;
-}
+// AnalysisResult interface removed - now we redirect to /video/[id] instead
 
 function AnalyzeContent() {
   const searchParams = useSearchParams();
@@ -40,8 +35,7 @@ function AnalyzeContent() {
   const { extractWithFallback, overallProgress, extractionMethod } = useMultiModalExtraction();
   
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [currentStep, setCurrentStep] = useState<'input' | 'analyzing' | 'completed' | 'error'>('input');
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [currentStep, setCurrentStep] = useState<'input' | 'analyzing' | 'error'>('input');
   const [error, setError] = useState<string>('');
   // Progress tracking simplified - using extractionMethod and overallProgress from hooks
   const [hasInitialized, setHasInitialized] = useState(false);
@@ -98,8 +92,7 @@ function AnalyzeContent() {
     isAnalyzingRef.current = true;
     setCurrentStep('analyzing');
     setError('');
-    // Reset analysis state
-    setAnalysisResult(null);
+    // Reset analysis state - no longer needed since we redirect to /video page
 
     try {
       // Extract YouTube ID if URL was provided
@@ -221,7 +214,7 @@ function AnalyzeContent() {
             
             const clientTranscript = await extractAndTranscribeClientSide(youtubeId, {
               language: language,
-              onProgress: updateProgress
+              // Progress handled by hook
             });
             
             if (clientTranscript && clientTranscript.trim().length > 0) {
@@ -247,28 +240,7 @@ function AnalyzeContent() {
       console.log(`📊 Transcript ready (source: ${transcriptSource})`);
       // Transcript processed
 
-      // Step 3: Generate summary
-      // Generating AI summary
-      const summaryResponse = await fetch('/api/summarize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          transcript,
-          maxLength: 1000,
-          style: 'paragraph',
-          language
-        })
-      });
-
-      if (!summaryResponse.ok) {
-        const errorData = await summaryResponse.json();
-        throw new Error(errorData.error || 'Nie udało się wygenerować podsumowania');
-      }
-
-      const { summary } = await summaryResponse.json();
-      // AI summary generated
-
-      // Step 4: Save to library
+      // Step 3: Save to library (skip summary generation)
       // Saving to library
       const saveResponse = await fetch('/api/library', {
         method: 'POST',
@@ -282,24 +254,18 @@ function AnalyzeContent() {
           viewCount: videoDetails.viewCount,
           publishedAt: videoDetails.publishedAt,
           description: videoDetails.description,
-          transcript,
-          summary
+          transcript
         })
       });
 
       await saveResponse.json();
       // Saved to library successfully
 
-      // Complete analysis
-      setAnalysisResult({
-        videoDetails,
-        transcript,
-        summary,
-        saved: saveResponse.ok
-      });
-      setCurrentStep('completed');
-
+      // Complete analysis - redirect to library 
       console.log('✅ Analysis completed successfully');
+      
+      // Redirect to library where user can chat with all their videos
+      router.push('/library');
 
     } catch (err) {
       console.error('❌ Analysis failed:', err);
@@ -313,7 +279,6 @@ function AnalyzeContent() {
 
   const handleBackToInput = () => {
     setCurrentStep('input');
-    setAnalysisResult(null);
     setError('');
     // Reset analysis state
     setHasInitialized(false);
@@ -450,107 +415,7 @@ function AnalyzeContent() {
           </div>
         )}
 
-        {/* Completed Step */}
-        {currentStep === 'completed' && analysisResult && (
-          <div className="max-w-6xl mx-auto">
-            <div className="grid lg:grid-cols-3 gap-8">
-              {/* Video Details */}
-              <div className="lg:col-span-1">
-                <div className="card bg-base-100 shadow-xl">
-                  <figure className="relative">
-                    <Image
-                      src={analysisResult.videoDetails.thumbnail}
-                      alt={analysisResult.videoDetails.title}
-                      width={320}
-                      height={180}
-                      className="w-full h-48 object-cover"
-                    />
-                    {analysisResult.videoDetails.duration && (
-                      <span className="absolute bottom-2 right-2 badge badge-neutral">
-                        <Clock className="w-3 h-3 mr-1" />
-                        {analysisResult.videoDetails.duration}
-                      </span>
-                    )}
-                  </figure>
-                  
-                  <div className="card-body">
-                    <h2 className="card-title line-clamp-2">{analysisResult.videoDetails.title}</h2>
-                    <p className="text-sm text-base-content/70">{analysisResult.videoDetails.channelName}</p>
-                    
-                    <div className="flex items-center gap-4 text-sm text-base-content/60 mt-2">
-                      {analysisResult.videoDetails.viewCount && (
-                        <span className="flex items-center gap-1">
-                          <Eye className="w-3 h-3" />
-                          {analysisResult.videoDetails.viewCount}
-                        </span>
-                      )}
-                    </div>
-
-                    {analysisResult.videoDetails.description && (
-                      <p className="text-sm mt-2 line-clamp-3">{analysisResult.videoDetails.description}</p>
-                    )}
-
-                    <div className="card-actions justify-between mt-4">
-                      <a
-                        href={`https://youtube.com/watch?v=${analysisResult.videoDetails.youtubeId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn btn-sm btn-outline"
-                      >
-                        <ExternalLink className="w-4 h-4 mr-1" />
-                        YouTube
-                      </a>
-                      
-                      {analysisResult.saved && (
-                        <span className="badge badge-success">
-                          <Save className="w-3 h-3 mr-1" />
-                          Zapisane
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Summary */}
-              <div className="lg:col-span-2">
-                <div className="card bg-base-100 shadow-xl">
-                  <div className="card-body">
-                    <h2 className="card-title mb-4">
-                      <BookOpen className="w-5 h-5" />
-                      Podsumowanie filmu
-                    </h2>
-                    
-                    <div className="prose prose-sm max-w-none">
-                      {analysisResult.summary.split('\n').map((paragraph, index) => (
-                        <p key={index} className="mb-4 leading-relaxed">
-                          {paragraph}
-                        </p>
-                      ))}
-                    </div>
-
-                    {/* Footer with paraphrase information */}
-                    <div className="mt-6 pt-4 border-t border-base-300">
-                      <p className="text-xs text-base-content/60 leading-relaxed">
-                        💡 <strong>Informacja:</strong> Powyższy tekst to parafraza słów autora filmu. 
-                        Aby zapoznać się w pełni z treścią, obejrzyj oryginalny film klikając przycisk{' '}
-                        <span className="font-medium">{'"YouTube"'}</span> pod miniaturką.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Success message */}
-            <div className="text-center mt-8">
-              <div className="alert alert-success max-w-md mx-auto">
-                <CheckCircle className="w-5 h-5" />
-                <span>Film został pomyślnie przeanalizowany i zapisany do biblioteki!</span>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Completed Step - now just redirects to video page */}
       </main>
 
       {/* Payment Modal */}
