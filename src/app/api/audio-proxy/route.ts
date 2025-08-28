@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { authenticateRequest } from '@/lib/auth-helpers';
 import ytdl from '@distube/ytdl-core';
 
 /**
@@ -21,11 +21,9 @@ function getRandomUserAgent() {
 
 export async function GET(request: NextRequest) {
   try {
-    // Authenticate user
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    // Authenticate user using Bearer token
+    const authResult = await authenticateRequest(request);
+    const user = authResult.user;
 
     const youtubeId = request.nextUrl.searchParams.get('id');
     if (!youtubeId) {
@@ -234,6 +232,14 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ Audio proxy error:', error);
+    
+    // Handle authentication errors
+    if (error instanceof Error && error.message.includes('Authentication failed')) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
     
     return NextResponse.json({
       error: 'Internal server error',

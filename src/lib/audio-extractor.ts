@@ -1,8 +1,10 @@
-// Shared YouTube audio extraction and Gladia transcription logic
-// Used by both API routes and direct server calls
+// Shared YouTube audio extraction and transcription logic
+// Supports both local Whisper and Gladia API with automatic fallback
 
 import ytdl from '@distube/ytdl-core';
 import { createGladiaClient } from './gladia-client';
+import { transcribeAudioLocally, isLocalTranscriptionAvailable, LocalTranscriptionResult } from './local-transcription';
+import { shouldUseLocalTranscription, getOptimalModelSize, logTranscriptionConfig } from './transcription-config';
 
 export interface AudioExtractionResult {
   transcript: string;
@@ -17,25 +19,45 @@ export interface AudioExtractionResult {
     audioCodec?: string;
     durationSeconds: number;
     transcriptionLength: number;
+    transcriptionMethod?: string;
+    whisperModel?: string;
+    processingTimeMs?: number;
+    costSavings?: {
+      gladiaCost: number;
+      localCost: number;
+      savings: number;
+      savingsPercentage: number;
+    };
   };
 }
 
 export interface AudioExtractionOptions {
   language?: string;
   maxDuration?: number; // in seconds, default 60 minutes
+  useLocalTranscription?: boolean; // if true, try local Whisper first
+  whisperModelSize?: 'tiny' | 'base' | 'small' | 'medium' | 'large';
 }
 
 /**
- * Extract audio from YouTube video and transcribe using Gladia API
+ * Extract audio from YouTube video and transcribe using local Whisper or Gladia API
+ * Automatically falls back to Gladia if local transcription fails
  */
 export async function extractAndTranscribeAudio(
   youtubeId: string,
   options: AudioExtractionOptions = {}
 ): Promise<AudioExtractionResult> {
-  const { language = 'auto', maxDuration = 60 * 60 } = options;
+  const { 
+    language = 'auto', 
+    maxDuration = 60 * 60, 
+    useLocalTranscription: manualUseLocal,
+    whisperModelSize: manualModelSize 
+  } = options;
   
   console.log(`🎵 Starting audio extraction and transcription for ${youtubeId}`);
   console.log(`🔧 Debug: Options: ${JSON.stringify(options)}`);
+  
+  // Log current transcription configuration
+  logTranscriptionConfig();
 
   // Validate YouTube ID format
   if (!/^[a-zA-Z0-9_-]{11}$/.test(youtubeId)) {
@@ -142,33 +164,100 @@ export async function extractAndTranscribeAudio(
       throw bufferError;
     }
 
-    // Step 5: Initialize Gladia client
-    console.log('🤖 Step 5: Starting Gladia transcription...');
-    let gladiaClient;
-    try {
-      gladiaClient = createGladiaClient();
-      console.log(`✅ Step 5a: Gladia client created successfully`);
-    } catch (gladiaError) {
-      console.error(`❌ Step 5 failed: Gladia client creation error:`, gladiaError);
-      throw gladiaError;
+    // Step 5: Choose transcription method (local vs API)
+    console.log('🤖 Step 5: Starting transcription...');
+    let transcript: string;
+    let transcriptionSource: string;
+    let transcriptionProcessingInfo: any = {};
+    
+    // Determine transcription method based on configuration and audio duration
+    const transcriptionDecision = shouldUseLocalTranscription(durationSeconds);
+    const useLocal = manualUseLocal !== undefined ? manualUseLocal : transcriptionDecision.useLocal;
+    console.log(`🎯 Transcription decision: ${transcriptionDecision.reason}`);
+    
+    // Try local transcription first if determined or manually requested
+    if (useLocal) {
+      console.log('🏠 Attempting local Whisper transcription...');
+      
+      try {
+        // Check if local transcription is available
+        const localAvailable = await isLocalTranscriptionAvailable();
+        
+        if (localAvailable) {
+          console.log('✅ Local Whisper is available, starting transcription...');
+          
+          // Determine optimal model size
+          const optimalModelSize = getOptimalModelSize(durationSeconds, manualModelSize);
+          console.log(`🤖 Selected Whisper model: ${optimalModelSize} (duration: ${Math.round(durationSeconds/60)}min)`);
+          
+          const localResult = await transcribeAudioLocally(audioBuffer, {
+            language: language === 'auto' ? undefined : language,
+            modelSize: optimalModelSize,
+            maxDuration: maxDuration
+          });
+          
+          transcript = localResult.transcript;
+          transcriptionSource = localResult.source;
+          transcriptionProcessingInfo = localResult.processingInfo;
+          
+          console.log(`✅ Local transcription completed: ${transcript.length} characters`);
+          console.log(`🤖 Model used: ${localResult.processingInfo.modelUsed}`);
+          console.log(`⚡ Processing time: ${localResult.processingInfo.processingTimeMs}ms`);
+          
+          // Calculate cost savings
+          const costSavings = transcriptionProcessingInfo.costSavings || {};
+          if (costSavings.savings > 0) {
+            console.log(`💰 Cost savings: $${costSavings.savings.toFixed(4)} (${costSavings.savingsPercentage.toFixed(1)}%)`);
+          }
+          
+        } else {
+          console.warn('⚠️ Local transcription not available, falling back to Gladia API');
+          throw new Error('Local transcription not available');
+        }
+        
+      } catch (localError) {
+        console.error('❌ Local transcription failed:', localError);
+        console.log('🔄 Falling back to Gladia API...');
+        
+        // Fall back to Gladia API
+        await transcribeWithGladia();
+      }
+      
+    } else {
+      // Use Gladia API directly
+      await transcribeWithGladia();
     }
     
-    // Step 6: Call Gladia API for transcription
-    console.log('📤 Step 6: Calling Gladia API...');
-    let transcript;
-    try {
-      const transcriptionConfig = {
-        language: language === 'auto' ? undefined : language,
-        diarization: false, // Disable for faster processing
-      };
-      console.log(`🔧 Debug: Gladia config: ${JSON.stringify(transcriptionConfig)}`);
+    // Helper function for Gladia transcription
+    async function transcribeWithGladia() {
+      console.log('📤 Using Gladia API for transcription...');
       
-      transcript = await gladiaClient.transcribeAudio(audioBuffer, transcriptionConfig, 300000); // 5 minute timeout
-      console.log(`🔧 Debug: Gladia returned transcript length: ${transcript ? transcript.length : 'null'}`);
-      console.log(`✅ Step 6 complete: Gladia API call successful`);
-    } catch (transcriptionError) {
-      console.error(`❌ Step 6 failed: Gladia transcription error:`, transcriptionError);
-      throw transcriptionError;
+      let gladiaClient;
+      try {
+        gladiaClient = createGladiaClient();
+        console.log(`✅ Gladia client created successfully`);
+      } catch (gladiaError) {
+        console.error(`❌ Gladia client creation error:`, gladiaError);
+        throw gladiaError;
+      }
+      
+      try {
+        const transcriptionConfig = {
+          language: language === 'auto' ? undefined : language,
+          diarization: false, // Disable for faster processing
+        };
+        console.log(`🔧 Debug: Gladia config: ${JSON.stringify(transcriptionConfig)}`);
+        
+        transcript = await gladiaClient.transcribeAudio(audioBuffer, transcriptionConfig, 300000); // 5 minute timeout
+        transcriptionSource = 'gladia-audio';
+        transcriptionProcessingInfo = { method: 'gladia-api' };
+        
+        console.log(`🔧 Debug: Gladia returned transcript length: ${transcript ? transcript.length : 'null'}`);
+        console.log(`✅ Gladia API call successful`);
+      } catch (transcriptionError) {
+        console.error(`❌ Gladia transcription error:`, transcriptionError);
+        throw transcriptionError;
+      }
     }
 
     if (!transcript || transcript.trim().length === 0) {
@@ -181,7 +270,7 @@ export async function extractAndTranscribeAudio(
 
     return {
       transcript: transcript.trim(),
-      source: 'gladia-audio',
+      source: transcriptionSource,
       videoDetails: {
         title: info.videoDetails.title,
         duration: info.videoDetails.lengthSeconds,
@@ -191,7 +280,11 @@ export async function extractAndTranscribeAudio(
         audioFormat: bestAudio.container,
         audioCodec: bestAudio.audioCodec,
         durationSeconds,
-        transcriptionLength: transcript.length
+        transcriptionLength: transcript.length,
+        transcriptionMethod: transcriptionProcessingInfo.method || transcriptionSource,
+        whisperModel: transcriptionProcessingInfo.modelUsed,
+        processingTimeMs: transcriptionProcessingInfo.processingTimeMs,
+        costSavings: transcriptionProcessingInfo.costSavings
       }
     };
 

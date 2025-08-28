@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { prisma } from '@/lib/prisma';
 import { formatTranscriptForAI } from '@/lib/transcript-formatter';
-import { getCurrentUser } from '@/lib/auth';
+import { authenticateRequest } from '@/lib/auth-helpers';
 
 interface ChatRequest {
   youtubeId: string;
@@ -16,17 +16,14 @@ interface ChatRequest {
  */
 export async function POST(request: NextRequest) {
   try {
+    // Authenticate request using Bearer token
+    const authResult = await authenticateRequest(request);
+    const user = authResult.user;
+    const userId = user.id;
+    
     // Try reading request body once
     const body = await request.json();
-    const { youtubeId, question, language = 'pl', googleId }: ChatRequest & { googleId: string } = body;
-    
-    // Get current user using Google OAuth
-    const user = await getCurrentUser(googleId);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    
-    const userId = user.id;
+    const { youtubeId, question, language = 'pl' }: ChatRequest = body;
 
     // Validate input
     if (!youtubeId || !question) {
@@ -206,6 +203,14 @@ ${formattedTranscript}`;
   } catch (error) {
     console.error('❌ Chat API error:', error);
     
+    // Handle authentication errors
+    if (error instanceof Error && error.message.includes('Authentication failed')) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+    
     // Handle specific OpenAI errors
     if (error instanceof Error) {
       if (error.message.includes('insufficient_quota')) {
@@ -235,15 +240,12 @@ ${formattedTranscript}`;
  */
 export async function GET(request: NextRequest) {
   try {
+    // Authenticate request using Bearer token
+    const authResult = await authenticateRequest(request);
+    const user = authResult.user;
+    
     const { searchParams } = new URL(request.url);
     const youtubeId = searchParams.get('youtubeId');
-    const googleIdParam = searchParams.get('googleId');
-    
-    // Get current user using Google OAuth
-    const user = await getCurrentUser(googleIdParam || undefined);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
     
     const userId = user.id;
 
@@ -291,6 +293,15 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ Get chat history error:', error);
+    
+    // Handle authentication errors
+    if (error instanceof Error && error.message.includes('Authentication failed')) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+    
     return NextResponse.json({
       error: 'Nie udało się pobrać historii czatu',
       details: error instanceof Error ? error.message : 'Unknown error'

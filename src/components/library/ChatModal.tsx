@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Clock, Eye, ExternalLink, MessageCircle, Send, X, FileText, Copy } from 'lucide-react';
+import { apiGet, apiPost } from '@/lib/api-client';
 
 interface LibraryVideo {
   id: string;
@@ -57,10 +58,9 @@ export default function ChatModal({ video, isOpen, onClose }: ChatModalProps) {
 
   const loadChatHistory = async () => {
     try {
-      const response = await fetch(`/api/chat-with-video?youtubeId=${video.youtubeId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setChatHistory(data.chats || []);
+      const response = await apiGet(`/api/chat-with-video?youtubeId=${video.youtubeId}`);
+      if (response.success && response.data) {
+        setChatHistory(response.data.chats || []);
       }
     } catch (error) {
       console.error('Error loading chat history:', error);
@@ -70,10 +70,9 @@ export default function ChatModal({ video, isOpen, onClose }: ChatModalProps) {
   const loadTranscript = async () => {
     setTranscriptLoading(true);
     try {
-      const response = await fetch(`/api/library?youtubeId=${video.youtubeId}`);
-      if (response.ok) {
-        const data = await response.json();
-        const videoData = data.videos?.[0];
+      const response = await apiGet(`/api/library?youtubeId=${video.youtubeId}`);
+      if (response.success && response.data) {
+        const videoData = response.data.videos?.[0];
         if (videoData?.transcript) {
           setTranscript(videoData.transcript);
         }
@@ -92,28 +91,23 @@ export default function ChatModal({ video, isOpen, onClose }: ChatModalProps) {
     setChatError('');
 
     try {
-      const response = await fetch('/api/chat-with-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          youtubeId: video.youtubeId,
-          question: question.trim(),
-          language: 'pl'
-        })
+      const response = await apiPost('/api/chat-with-video', {
+        youtubeId: video.youtubeId,
+        question: question.trim(),
+        language: 'pl'
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Nie udało się uzyskać odpowiedzi');
+      if (!response.success) {
+        throw new Error(response.error || 'Nie udało się uzyskać odpowiedzi');
       }
 
-      const result = await response.json();
+      const result = response.data;
       
       // Add new message to chat history
       const newMessage: ChatMessage = {
         id: Date.now().toString(),
         question: question.trim(),
-        answer: result.answer,
+        answer: result?.answer || '',
         createdAt: new Date().toISOString()
       };
 

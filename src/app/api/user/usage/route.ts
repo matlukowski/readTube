@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { authenticateRequest } from '@/lib/auth-helpers';
 import { prisma } from '@/lib/prisma';
-import { getOrCreateUser } from '@/lib/user';
 import { formatMinutesToTime, getRemainingMinutes } from '@/lib/stripe';
 
 // GET /api/user/usage - Get user's current usage and limits
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const { userId: clerkUserId } = await auth();
-    if (!clerkUserId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const user = await getOrCreateUser();
+    const { userId, user: authUser } = await authenticateRequest(request);
+    
+    // Get user from database
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+    
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
@@ -81,6 +81,15 @@ export async function GET() {
     });
   } catch (error) {
     console.error('Usage API error:', error);
+    
+    // Handle authentication errors
+    if (error instanceof Error && error.message.includes('Authentication failed')) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+    
     return NextResponse.json(
       { error: 'Failed to fetch usage data' },
       { status: 500 }
@@ -91,12 +100,13 @@ export async function GET() {
 // POST /api/user/usage - Log video analysis usage
 export async function POST(request: NextRequest) {
   try {
-    const { userId: clerkUserId } = await auth();
-    if (!clerkUserId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const user = await getOrCreateUser();
+    const { userId, user: authUser } = await authenticateRequest(request);
+    
+    // Get user from database
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+    
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
@@ -150,6 +160,15 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Usage logging error:', error);
+    
+    // Handle authentication errors
+    if (error instanceof Error && error.message.includes('Authentication failed')) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+    
     return NextResponse.json(
       { error: 'Failed to log usage' },
       { status: 500 }

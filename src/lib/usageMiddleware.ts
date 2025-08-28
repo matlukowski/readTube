@@ -1,5 +1,4 @@
 import { prisma } from '@/lib/prisma';
-import { getOrCreateUser } from '@/lib/user';
 import { getRemainingMinutes, isStripeEnabled } from '@/lib/stripe';
 import { YouTubeAPI } from '@/lib/youtube';
 
@@ -19,7 +18,7 @@ export interface UsageCheckResult {
 /**
  * Check if user can analyze a video based on their usage limits
  */
-export async function checkUsageLimit(youtubeId: string): Promise<UsageCheckResult> {
+export async function checkUsageLimit(youtubeId: string, userId?: string): Promise<UsageCheckResult> {
   try {
     // If Stripe is not enabled, allow unlimited usage (demo mode)
     if (!isStripeEnabled()) {
@@ -32,8 +31,25 @@ export async function checkUsageLimit(youtubeId: string): Promise<UsageCheckResu
       };
     }
 
-    // Get user from database
-    const user = await getOrCreateUser();
+    // Get user from database (user should be provided from authenticated request)
+    if (!userId) {
+      return {
+        canAnalyze: false,
+        remainingMinutes: 0,
+        message: 'Użytkownik nie został znaleziony',
+      };
+    }
+    
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        minutesUsed: true,
+        minutesPurchased: true,
+        subscriptionStatus: true,
+      }
+    });
+    
     if (!user) {
       return {
         canAnalyze: false,

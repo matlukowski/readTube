@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { authenticateRequest } from '@/lib/auth-helpers';
 import { transcribeRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
 import { checkUsageLimit, logVideoUsage } from '@/lib/usageMiddleware';
@@ -11,22 +11,20 @@ import { getAIService } from '@/lib/ai';
 
 export async function POST(request: NextRequest) {
   try {
+    // Authenticate request using Bearer token
+    const authResult = await authenticateRequest(request);
+    const user = authResult.user;
+    
     // Read request body once at the beginning
     const body = await request.json();
-    const { youtubeId, transcript: clientTranscript, language = 'pl', googleId } = body;
-    
-    // Get current user using Google OAuth
-    const user = await getCurrentUser(googleId);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { youtubeId, transcript: clientTranscript, language = 'pl' } = body;
     
     // Validate the request
     transcribeRequestSchema.parse({ youtubeId });
 
     // 🛡️ Check usage limits BEFORE proceeding with transcription
     console.log(`🔍 Checking usage limits for video ${youtubeId}`);
-    const usageCheck = await checkUsageLimit(youtubeId);
+    const usageCheck = await checkUsageLimit(youtubeId, user.id);
     
     if (!usageCheck.canAnalyze) {
       return NextResponse.json({
@@ -210,6 +208,14 @@ export async function POST(request: NextRequest) {
     
   } catch (error) {
     console.error('Transcribe API error:', error);
+    
+    // Handle authentication errors
+    if (error instanceof Error && error.message.includes('Authentication failed')) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
     
     return NextResponse.json(
       { 

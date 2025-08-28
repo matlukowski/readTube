@@ -39,7 +39,7 @@ export default function LoginButton({
       onClick={login}
       disabled={isLoading}
       className={`btn ${sizeClass} ${variantClass} ${widthClass} gap-2`}
-      title="Zaloguj się używając Google OAuth z dostępem do YouTube API"
+      title="Zaloguj się używając Google OAuth"
     >
       {isLoading ? (
         <Loader className="w-4 h-4 animate-spin" />

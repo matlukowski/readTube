@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { X, CreditCard, Clock, Zap, AlertTriangle } from 'lucide-react';
+import { apiPost } from '@/lib/api-client';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -28,16 +29,10 @@ export default function PaymentModal({
     // Check if Stripe is available by making a test call
     const checkStripeAvailability = async () => {
       try {
-        const response = await fetch('/api/stripe/checkout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        });
+        const response = await apiPost('/api/stripe/checkout', {});
         
-        if (response.status === 503) {
-          const data = await response.json();
-          if (data.code === 'STRIPE_NOT_CONFIGURED') {
-            setStripeAvailable(false);
-          }
+        if (response.status === 503 && response.error?.includes('STRIPE_NOT_CONFIGURED')) {
+          setStripeAvailable(false);
         }
       } catch (error) {
         console.log('Stripe availability check failed:', error);
@@ -60,19 +55,13 @@ export default function PaymentModal({
 
     try {
       // Create checkout session
-      const response = await fetch('/api/stripe/checkout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+      const response = await apiPost('/api/stripe/checkout', {});
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Błąd podczas tworzenia sesji płatności');
+      if (!response.success) {
+        throw new Error(response.error || 'Błąd podczas tworzenia sesji płatności');
       }
 
-      const { url } = await response.json();
+      const { url } = response.data || {};
       
       // Redirect to Stripe Checkout
       window.location.href = url;

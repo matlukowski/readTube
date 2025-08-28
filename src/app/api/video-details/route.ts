@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { authenticateRequest } from '@/lib/auth-helpers';
 import { getYouTubeAPI } from '@/lib/youtube';
 
 export async function POST(request: NextRequest) {
   try {
-    const { youtubeId, googleId } = await request.json();
+    // Authenticate request using Bearer token
+    const authResult = await authenticateRequest(request);
+    const user = authResult.user;
     
-    // Get current user using Google OAuth
-    const user = await getCurrentUser(googleId);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { youtubeId } = await request.json();
 
     if (!youtubeId) {
       return NextResponse.json({ error: 'YouTube ID is required' }, { status: 400 });
@@ -85,6 +83,15 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Video details API error:', error);
+    
+    // Handle authentication errors
+    if (error instanceof Error && error.message.includes('Authentication failed')) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+    
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

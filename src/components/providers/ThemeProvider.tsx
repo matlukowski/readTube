@@ -1,8 +1,6 @@
 'use client';
 
-import { ClerkProvider } from '@clerk/nextjs';
 import { useEffect, useState } from 'react';
-import { getClerkAppearance, polishLocalization } from '@/lib/clerkAppearance';
 
 interface ThemeProviderProps {
   children: React.ReactNode;
@@ -42,11 +40,8 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   }, []);
   
   return (
-    <ClerkProvider
-      appearance={getClerkAppearance(theme)}
-      localization={polishLocalization}
-    >
+    <>
       {children}
-    </ClerkProvider>
+    </>
   );
 }

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 
 export default function UserMenu() {
-  const { user, logout, hasYouTubeScope, isAuthenticated } = useAuth();
+  const { user, logout, isAuthenticated } = useAuth();
 
   if (!isAuthenticated || !user) {
     return null;
@@ -53,17 +53,7 @@ export default function UserMenu() {
         
         <div className="divider my-1"></div>
         
-        {/* YouTube Authorization Status */}
-        <li className="menu-title">
-          <div className="flex items-center gap-2">
-            <Youtube className={`w-4 h-4 ${hasYouTubeScope ? 'text-success' : 'text-warning'}`} />
-            <span className="text-xs">
-              YouTube API: {hasYouTubeScope ? 'Autoryzowane' : 'Brak dostępu'}
-            </span>
-          </div>
-        </li>
-        
-        <div className="divider my-1"></div>
+        {/* YouTube API status removed - authentication simplified */}
         
         {/* Navigation Links */}
         <li>

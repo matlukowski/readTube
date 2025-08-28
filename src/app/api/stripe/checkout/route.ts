@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { authenticateRequest } from '@/lib/auth-helpers';
 import { createCheckoutSession, isStripeEnabled } from '@/lib/stripe';
-import { getOrCreateUser } from '@/lib/user';
+import { prisma } from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,10 +13,7 @@ export async function POST(request: NextRequest) {
       }, { status: 503 });
     }
 
-    const { userId: clerkUserId } = await auth();
-    if (!clerkUserId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { userId } = await authenticateRequest(request);
 
     // Get user from database
     const user = await getOrCreateUser();

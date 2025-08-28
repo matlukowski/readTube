@@ -11,6 +11,7 @@ import { extractYouTubeId } from '@/components/analyze/AnalyzeBar';
 import { formatMinutesToTime } from '@/lib/stripe';
 import { useMultiModalExtraction } from '@/hooks/useAudioExtraction';
 import { extractAndTranscribeClientSide } from '@/lib/client-audio-extractor';
+import { apiPost } from '@/lib/api-client';
 
 interface VideoDetails {
   youtubeId: string;
@@ -103,18 +104,13 @@ function AnalyzeContent() {
       console.log('🎯 Starting analysis for video:', youtubeId);
 
       // Step 1: Get video details
-      const detailsResponse = await fetch('/api/video-details', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ youtubeId })
-      });
-
-      if (!detailsResponse.ok) {
-        const errorData = await detailsResponse.json();
-        throw new Error(errorData.error || 'Nie udało się pobrać szczegółów filmu');
+      const detailsResponse = await apiPost<VideoDetails>('/api/video-details', { youtubeId });
+      
+      if (!detailsResponse.success) {
+        throw new Error(detailsResponse.error || 'Nie udało się pobrać szczegółów filmu');
       }
-
-      const videoDetails: VideoDetails = await detailsResponse.json();
+      
+      const videoDetails = detailsResponse.data!;
       // Video details fetched
 
       // Initialize transcript variables  
@@ -123,24 +119,24 @@ function AnalyzeContent() {
 
       // Step 2: Process transcript with Gladia API
       console.log('🚀 Starting Gladia API transcription...');
-      const transcriptResponse = await fetch('/api/transcribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          youtubeId, 
-          language
-        })
+      const transcriptResponse = await apiPost('/api/transcribe', { 
+        youtubeId, 
+        language
       });
 
-      if (!transcriptResponse.ok) {
-        const errorData = await transcriptResponse.json();
+      if (!transcriptResponse.success) {
+        const errorData = transcriptResponse;
         
         // Check if this is a usage limit error (402 Payment Required)
-        if (transcriptResponse.status === 402 && errorData.upgradeRequired) {
+        if (transcriptResponse.status === 402 && errorData.error && errorData.error.includes('upgradeRequired')) {
           console.log('💳 Usage limit exceeded, showing payment modal');
+          // Parse additional data from error response if available
+          const usageData = errorData.data || {};
           setUsageInfo({
-            ...errorData.usageInfo,
-            formattedRemaining: formatMinutesToTime(errorData.usageInfo.remainingMinutes)
+            remainingMinutes: usageData.remainingMinutes || 0,
+            requiredMinutes: usageData.requiredMinutes || 0,
+            subscriptionStatus: usageData.subscriptionStatus || 'free',
+            formattedRemaining: formatMinutesToTime(usageData.remainingMinutes || 0)
           });
           setShowPaymentModal(true);
           setCurrentStep('input'); // Return to input step
@@ -148,7 +144,7 @@ function AnalyzeContent() {
         }
         
         // If server extraction fails, try client-side audio extraction
-        if (errorData.requiresClientExtraction) {
+        if (errorData.error && errorData.error.includes('requiresClientExtraction')) {
           console.log('⚠️ Server extraction failed. Trying client-side audio extraction...');
           
           // Last resort: try audio extraction as fallback
@@ -216,32 +212,31 @@ function AnalyzeContent() {
         }
       }
 
-      const transcriptData = await transcriptResponse.json();
-      transcript = transcriptData.transcript;
-      transcriptSource = transcriptData.source || transcriptSource;
+      if (transcriptResponse.success && transcriptResponse.data) {
+        transcript = transcriptResponse.data.transcript;
+        transcriptSource = transcriptResponse.data.source || transcriptSource;
+      }
       
       console.log(`📊 Transcript ready (source: ${transcriptSource})`);
       // Transcript processed
 
       // Step 3: Save to library (skip summary generation)
       // Saving to library
-      const saveResponse = await fetch('/api/library', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          youtubeId,
-          title: videoDetails.title,
-          channelName: videoDetails.channelName,
-          thumbnail: videoDetails.thumbnail,
-          duration: videoDetails.duration,
-          viewCount: videoDetails.viewCount,
-          publishedAt: videoDetails.publishedAt,
-          description: videoDetails.description,
-          transcript
-        })
+      const saveResponse = await apiPost('/api/library', {
+        youtubeId,
+        title: videoDetails.title,
+        channelName: videoDetails.channelName,
+        thumbnail: videoDetails.thumbnail,
+        duration: videoDetails.duration,
+        viewCount: videoDetails.viewCount,
+        publishedAt: videoDetails.publishedAt,
+        description: videoDetails.description,
+        transcript
       });
-
-      await saveResponse.json();
+      
+      if (!saveResponse.success) {
+        console.warn('⚠️ Failed to save to library:', saveResponse.error);
+      }
       // Saved to library successfully
 
       // Complete analysis - redirect to library 

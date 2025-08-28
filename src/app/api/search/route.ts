@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { authenticateRequest } from '@/lib/auth-helpers';
 import { getYouTubeAPI } from '@/lib/youtube';
 import { searchQuerySchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { userId } = await authenticateRequest(request);
 
     const body = await request.json();
     const validatedData = searchQuerySchema.parse(body);
@@ -35,7 +32,7 @@ export async function POST(request: NextRequest) {
 
     // Save search to database (convert SearchResult back to VideoData for Prisma)
     const user = await prisma.user.findUnique({
-      where: { clerkId: userId },
+      where: { id: userId },
     });
 
     if (user) {

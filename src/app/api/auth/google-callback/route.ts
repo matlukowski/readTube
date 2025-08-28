@@ -89,30 +89,9 @@ export async function POST(request: Request) {
       });
     }
 
-    // Store or update YouTube OAuth tokens
-    if (accessToken) {
-      const expiresAt = new Date(Date.now() + 3600 * 1000); // 1 hour from now
-      
-      await prisma.youTubeAuth.upsert({
-        where: { userId: dbUser.id },
-        update: {
-          accessToken,
-          refreshToken: refreshToken || undefined,
-          expiresAt,
-          scope: 'https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
-          updatedAt: new Date(),
-        },
-        create: {
-          userId: dbUser.id,
-          accessToken,
-          refreshToken: refreshToken || undefined,
-          expiresAt,
-          scope: 'https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
-        }
-      });
-
-      console.log(`🔐 YouTube OAuth tokens stored for user: ${dbUser.id}`);
-    }
+    // YouTube OAuth token storage removed - now using simplified Google OAuth
+    // Access tokens are managed client-side for basic authentication only
+    console.log(`✅ User authenticated with Google OAuth: ${dbUser.id}`);
 
     return NextResponse.json({
       success: true,
@@ -155,9 +134,6 @@ export async function GET(request: Request) {
 
     const user = await prisma.user.findUnique({
       where: { googleId },
-      include: {
-        youtubeAuth: true,
-      }
     });
 
     if (!user) {
@@ -176,8 +152,7 @@ export async function GET(request: Request) {
         minutesUsed: user.minutesUsed,
         minutesPurchased: user.minutesPurchased,
       },
-      hasYouTubeAuth: !!user.youtubeAuth,
-      youtubeAuthExpires: user.youtubeAuth?.expiresAt,
+      // YouTube auth status removed - simplified authentication
     });
 
   } catch (error) {

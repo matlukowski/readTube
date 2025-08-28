@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { authenticateRequest } from '@/lib/auth-helpers';
 import { extractAndTranscribeAudio, checkAudioExtractionAvailability } from '@/lib/audio-extractor';
 
 // Audio extraction and transcription endpoint using Gladia API
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { userId } = await authenticateRequest(request);
 
     const body = await request.json();
     const { youtubeId, language = 'auto' } = body;

@@ -1,21 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentUser } from '@/lib/auth';
+import { authenticateRequest } from '@/lib/auth-helpers';
 
 // GET /api/library - Get user's saved video summaries
 export async function GET(request: NextRequest) {
   try {
+    // Authenticate request using Bearer token
+    const authResult = await authenticateRequest(request);
+    const user = authResult.user;
+    const userId = user.id;
+    
     const { searchParams } = new URL(request.url);
     const youtubeIdParam = searchParams.get('youtubeId');
-    const googleIdParam = searchParams.get('googleId');
-    
-    // Get current user using Google OAuth
-    const user = await getCurrentUser(googleIdParam || undefined);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    
-    const userId = user.id;
 
     // If specific youtubeId is requested, return that video
     if (youtubeIdParam) {
@@ -121,6 +117,15 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Library GET API error:', error);
+    
+    // Handle authentication errors
+    if (error instanceof Error && error.message.includes('Authentication failed')) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+    
     return NextResponse.json(
       { error: 'Failed to fetch library' },
       { status: 500 }
@@ -131,14 +136,11 @@ export async function GET(request: NextRequest) {
 // POST /api/library - Save a new video analysis to library
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { googleId } = body;
+    // Authenticate request using Bearer token
+    const authResult = await authenticateRequest(request);
+    const user = authResult.user;
     
-    // Get current user using Google OAuth
-    const user = await getCurrentUser(googleId);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const body = await request.json();
     const {
       youtubeId,
       title,
@@ -208,6 +210,14 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Library POST API error:', error);
     
+    // Handle authentication errors
+    if (error instanceof Error && error.message.includes('Authentication failed')) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+    
     // Handle duplicate key errors
     if (error instanceof Error && error.message.includes('Unique constraint')) {
       return NextResponse.json(
@@ -226,14 +236,11 @@ export async function POST(request: NextRequest) {
 // DELETE /api/library - Remove video from library
 export async function DELETE(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const googleId = searchParams.get('googleId');
+    // Authenticate request using Bearer token
+    const authResult = await authenticateRequest(request);
+    const user = authResult.user;
     
-    // Get current user using Google OAuth
-    const user = await getCurrentUser(googleId || undefined);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { searchParams } = new URL(request.url);
     const youtubeId = searchParams.get('youtubeId');
 
     if (!youtubeId) {
@@ -267,6 +274,15 @@ export async function DELETE(request: NextRequest) {
 
   } catch (error) {
     console.error('Library DELETE API error:', error);
+    
+    // Handle authentication errors
+    if (error instanceof Error && error.message.includes('Authentication failed')) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+    
     return NextResponse.json(
       { error: 'Failed to remove video from library' },
       { status: 500 }

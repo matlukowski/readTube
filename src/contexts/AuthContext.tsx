@@ -18,15 +18,12 @@ interface AuthContextType {
   accessToken: string | null;
   login: () => void;
   logout: () => void;
-  hasYouTubeScope: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// YouTube API scopes required for our application (including captions access)
-const YOUTUBE_SCOPES = [
-  'https://www.googleapis.com/auth/youtube.readonly',
-  'https://www.googleapis.com/auth/youtube.force-ssl', // Required for Captions API
+// Google OAuth scopes for basic user authentication
+const GOOGLE_OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.profile',
   'https://www.googleapis.com/auth/userinfo.email',
 ].join(' ');
@@ -39,7 +36,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [hasYouTubeScope, setHasYouTubeScope] = useState(false);
+  // Removed hasYouTubeScope - no longer needed since we use yt-dlp instead of YouTube OAuth
 
   // Check if user has valid session on app start
   useEffect(() => {
@@ -56,7 +53,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const userData = JSON.parse(storedUser);
             setUser(userData);
             setAccessToken(storedToken);
-            setHasYouTubeScope(true);
+            // No YouTube scope validation needed
           } else {
             // Token expired, clear storage
             localStorage.removeItem('google_access_token');
@@ -106,7 +103,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         };
         
         setUser(userData);
-        setHasYouTubeScope(true);
+        // No YouTube scope tracking needed
         localStorage.setItem('user_data', JSON.stringify(userData));
         
         // Create/update user in our database
@@ -132,7 +129,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.error('❌ Google login error:', error);
       setIsLoading(false);
     },
-    scope: YOUTUBE_SCOPES,
+    scope: GOOGLE_OAUTH_SCOPES,
     flow: 'implicit', // Use implicit flow for faster access (good for client-side apps)
   });
 
@@ -141,7 +138,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       googleLogout();
       setUser(null);
       setAccessToken(null);
-      setHasYouTubeScope(false);
+      // No YouTube scope to reset
       localStorage.removeItem('google_access_token');
       localStorage.removeItem('user_data');
       console.log('👋 User logged out');
@@ -157,7 +154,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     accessToken,
     login,
     logout,
-    hasYouTubeScope,
   };
 
   return (
@@ -175,33 +171,5 @@ export function useAuth() {
   return context;
 }
 
-// Helper hook for YouTube API calls
-export function useYouTubeAPI() {
-  const { accessToken, hasYouTubeScope } = useAuth();
-
-  const callYouTubeAPI = async (endpoint: string, options: RequestInit = {}) => {
-    if (!accessToken || !hasYouTubeScope) {
-      throw new Error('No YouTube access token available');
-    }
-
-    const response = await fetch(`https://www.googleapis.com/youtube/v3${endpoint}`, {
-      ...options,
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`YouTube API error: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json();
-  };
-
-  return {
-    callYouTubeAPI,
-    hasAccess: hasYouTubeScope && !!accessToken,
-  };
-}
+// useYouTubeAPI hook removed - no longer needed since we use yt-dlp for transcription
+// YouTube Data API calls (search) now use server-side API key instead of OAuth tokens

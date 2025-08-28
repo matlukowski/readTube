@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Clock, Zap } from 'lucide-react';
+import { apiGet } from '@/lib/api-client';
 
 interface UsageData {
   minutesUsed: number;
@@ -22,10 +23,9 @@ export default function UsageCounter() {
 
   const fetchUsage = async () => {
     try {
-      const response = await fetch('/api/user/usage');
-      if (response.ok) {
-        const data = await response.json();
-        setUsage(data.usage);
+      const response = await apiGet('/api/user/usage');
+      if (response.success && response.data) {
+        setUsage(response.data.usage);
       }
     } catch (error) {
       console.error('Failed to fetch usage:', error);
