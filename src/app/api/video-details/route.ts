@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { getCurrentUser } from '@/lib/auth';
 import { getYouTubeAPI } from '@/lib/youtube';
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const { youtubeId, googleId } = await request.json();
+    
+    // Get current user using Google OAuth
+    const user = await getCurrentUser(googleId);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    const { youtubeId } = await request.json();
 
     if (!youtubeId) {
       return NextResponse.json({ error: 'YouTube ID is required' }, { status: 400 });

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { getCurrentUser } from '@/lib/auth';
 import { transcribeRequestSchema } from '@/lib/validations';
 import { prisma } from '@/lib/prisma';
 import { checkUsageLimit, logVideoUsage } from '@/lib/usageMiddleware';
 import { YouTubeAPI } from '@/lib/youtube';
 import { extractAndTranscribeAudio } from '@/lib/audio-extractor';
+import { getAIService } from '@/lib/ai';
 
 
 
@@ -12,46 +13,11 @@ export async function POST(request: NextRequest) {
   try {
     // Read request body once at the beginning
     const body = await request.json();
-    const { youtubeId, transcript: clientTranscript, language = 'pl' } = body;
+    const { youtubeId, transcript: clientTranscript, language = 'pl', googleId } = body;
     
-    // Try both authentication systems during migration
-    let userId: string | null = null;
-    let googleId: string | undefined = undefined;
-    
-    // Method 1: Try Google OAuth (new system)
-    try {
-      if (body.googleId && typeof body.googleId === 'string') {
-        googleId = body.googleId;
-        // Get user by googleId to get database userId
-        const user = await prisma.user.findUnique({
-          where: { googleId: googleId },
-          select: { id: true }
-        });
-        if (user) {
-          userId = user.id;
-        }
-      }
-    } catch {
-      // Body might not have googleId, continue
-    }
-    
-    // Method 2: Fallback to Clerk (old system)
-    if (!userId) {
-      const clerkAuth = await auth();
-      if (clerkAuth.userId) {
-        // Get user by clerkId
-        const user = await prisma.user.findUnique({
-          where: { clerkId: clerkAuth.userId },
-          select: { id: true, googleId: true }
-        });
-        if (user) {
-          userId = user.id;
-          googleId = user.googleId || undefined; // Convert null to undefined
-        }
-      }
-    }
-    
-    if (!userId) {
+    // Get current user using Google OAuth
+    const user = await getCurrentUser(googleId);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
@@ -177,6 +143,18 @@ export async function POST(request: NextRequest) {
     
     console.log(`📊 Transcript extracted: ${transcript.length} characters`);
 
+    // Step 3: Format raw transcript with OpenAI for better readability
+    let formattedTranscript = transcript;
+    try {
+      console.log('🤖 Formatting transcript with OpenAI...');
+      const ai = getAIService();
+      formattedTranscript = await ai.formatRawTranscript(transcript, language);
+      console.log(`✨ Transcript formatted: ${formattedTranscript.length} characters`);
+    } catch (formatError) {
+      console.warn('⚠️ OpenAI formatting failed, using raw transcript:', formatError);
+      // Continue with raw transcript if formatting fails
+    }
+
     // Get video details for usage logging
     const youtubeAPI = new YouTubeAPI(process.env.YOUTUBE_API_KEY!);
     let videoDetails;
@@ -190,16 +168,19 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    // Save transcript to database
+    // Save both raw and formatted transcript to database
     await prisma.video.upsert({
       where: { youtubeId },
-      update: { transcript },
+      update: { 
+        transcript: formattedTranscript, // Formatted for UI display
+        // TODO: Add rawTranscript field to schema if needed for chat fallback
+      },
       create: {
         youtubeId,
         title: videoDetails.snippet.title || 'Pending',
         channelName: 'Pending',
         thumbnail: '',
-        transcript,
+        transcript: formattedTranscript, // Formatted for UI display
       },
     });
 
@@ -217,9 +198,9 @@ export async function POST(request: NextRequest) {
     console.log(`✅ Transcription completed and ${minutesUsed} minutes logged for user`);
 
     return NextResponse.json({ 
-      transcript,
+      transcript: formattedTranscript, // Return formatted transcript
       cached: false,
-      source,
+      source: source + '-formatted', // Indicate it's been formatted
       usageInfo: {
         minutesUsed,
         videoDuration,

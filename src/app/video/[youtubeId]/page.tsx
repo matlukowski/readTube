@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useUser } from '@clerk/nextjs';
 import Image from 'next/image';
 import { ArrowLeft, Clock, Eye, ExternalLink, MessageCircle, FileText, Copy } from 'lucide-react';
 import Header from '@/components/layout/Header';
@@ -39,8 +38,10 @@ interface ChatHistory {
 export default function VideoPage() {
   const params = useParams();
   const router = useRouter();
-  const { isSignedIn } = useUser();
   const youtubeId = params.youtubeId as string;
+  
+  // For now, assume user is signed in - Google OAuth will be handled at app level
+  const isSignedIn = true;
 
   const [videoData, setVideoData] = useState<VideoData | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
@@ -54,17 +55,9 @@ export default function VideoPage() {
   const [isAsking, setIsAsking] = useState(false);
   const [chatError, setChatError] = useState<string>('');
 
-  // Authentication redirect
-  useEffect(() => {
-    if (!isSignedIn) {
-      router.push('/sign-in');
-      return;
-    }
-  }, [isSignedIn, router]);
-
   // Load video data and chat history
   useEffect(() => {
-    if (!youtubeId || !isSignedIn) return;
+    if (!youtubeId) return;
 
     const loadVideoData = async () => {
       try {

@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import Image from 'next/image';
 import { Clock, Eye, ExternalLink, MessageCircle, Send, X, FileText, Copy } from 'lucide-react';
 
 interface LibraryVideo {
@@ -146,77 +145,83 @@ export default function ChatModal({ video, isOpen, onClose }: ChatModalProps) {
 
   return (
     <div className="modal modal-open">
-      <div className="modal-box w-11/12 max-w-6xl h-5/6 max-h-screen overflow-hidden flex flex-col">
+      <div className="modal-box w-full max-w-6xl max-h-[95vh] overflow-y-auto flex flex-col p-6">
         {/* Header */}
-        <div className="flex items-start justify-between mb-4 flex-shrink-0">
-          <div className="flex items-start gap-4 flex-1 pr-4">
-            <Image
-              src={video.thumbnail}
-              alt={video.title}
-              width={120}
-              height={68}
-              className="w-30 h-17 object-cover rounded"
-            />
-            <div className="flex-1 min-w-0">
-              <h3 className="font-bold text-lg line-clamp-2 mb-1">{video.title}</h3>
-              <p className="text-sm text-base-content/60 mb-2">{video.channelName}</p>
-              <div className="flex items-center gap-4 text-xs text-base-content/50">
-                {video.duration && (
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {video.duration}
-                  </span>
-                )}
-                {video.viewCount && (
-                  <span className="flex items-center gap-1">
-                    <Eye className="w-3 h-3" />
-                    {video.viewCount}
-                  </span>
-                )}
-                <a
-                  href={`https://youtube.com/watch?v=${video.youtubeId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  YouTube
-                </a>
-              </div>
+        <div className="flex items-center justify-between mb-6 flex-shrink-0">
+          <div className="flex-1">
+            <h3 className="font-bold text-xl line-clamp-2 mb-1">{video.title}</h3>
+            <p className="text-base-content/70 mb-2">{video.channelName}</p>
+            <div className="flex items-center gap-4 text-sm text-base-content/60">
+              {video.duration && (
+                <span className="flex items-center gap-1">
+                  <Clock className="w-4 h-4" />
+                  {video.duration}
+                </span>
+              )}
+              {video.viewCount && (
+                <span className="flex items-center gap-1">
+                  <Eye className="w-4 h-4" />
+                  {video.viewCount}
+                </span>
+              )}
+              <a
+                href={`https://youtube.com/watch?v=${video.youtubeId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Otwórz w YouTube
+              </a>
             </div>
           </div>
           <button
             className="btn btn-sm btn-circle btn-ghost flex-shrink-0"
             onClick={onClose}
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="tabs tabs-boxed mb-4 flex-shrink-0">
-          <button 
-            className={`tab tab-sm ${activeTab === 'chat' ? 'tab-active' : ''}`}
-            onClick={() => setActiveTab('chat')}
-          >
-            <MessageCircle className="w-4 h-4 mr-2" />
-            Chat z filmem
-          </button>
-          <button 
-            className={`tab tab-sm ${activeTab === 'transcript' ? 'tab-active' : ''}`}
-            onClick={() => setActiveTab('transcript')}
-            disabled={!transcript && !transcriptLoading}
-          >
-            <FileText className="w-4 h-4 mr-2" />
-            Transkrypcja
-            {!transcript && !transcriptLoading && (
-              <span className="badge badge-xs badge-warning ml-2">Brak</span>
-            )}
-          </button>
+        {/* Video Player */}
+        <div className="flex-shrink-0 mb-6">
+          <div className="aspect-video bg-black rounded-lg overflow-hidden max-h-[50vh]">
+            <iframe
+              src={`https://www.youtube.com/embed/${video.youtubeId}`}
+              title={video.title}
+              className="w-full h-full"
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-hidden">
+        {/* Chat Section */}
+        <div className="flex-1 flex flex-col min-h-[40vh]">
+          <div className="tabs tabs-boxed mb-4 flex-shrink-0">
+            <button 
+              className={`tab ${activeTab === 'chat' ? 'tab-active' : ''}`}
+              onClick={() => setActiveTab('chat')}
+            >
+              <MessageCircle className="w-4 h-4 mr-2" />
+              Czat z filmem
+            </button>
+            <button 
+              className={`tab ${activeTab === 'transcript' ? 'tab-active' : ''}`}
+              onClick={() => setActiveTab('transcript')}
+              disabled={!transcript && !transcriptLoading}
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              Podsumowanie AI
+              {!transcript && !transcriptLoading && (
+                <span className="badge badge-xs badge-warning ml-2">Brak</span>
+              )}
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-hidden">
           {activeTab === 'chat' && (
             <div className="h-full flex flex-col">
               {/* Chat History */}
@@ -342,6 +347,7 @@ export default function ChatModal({ video, isOpen, onClose }: ChatModalProps) {
               )}
             </div>
           )}
+          </div>
         </div>
       </div>
       

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useUser } from '@clerk/nextjs';
 // import Image from 'next/image'; // Unused after UI simplification
 import { ArrowLeft, AlertCircle } from 'lucide-react';
 import AnalyzeBar from '@/components/analyze/AnalyzeBar';
@@ -10,7 +9,6 @@ import Header from '@/components/layout/Header';
 import PaymentModal from '@/components/payments/PaymentModal';
 import { extractYouTubeId } from '@/components/analyze/AnalyzeBar';
 import { formatMinutesToTime } from '@/lib/stripe';
-import { useYouTubeTranscript } from '@/hooks/useYouTubeTranscript';
 import { useMultiModalExtraction } from '@/hooks/useAudioExtraction';
 import { extractAndTranscribeClientSide } from '@/lib/client-audio-extractor';
 
@@ -30,8 +28,8 @@ interface VideoDetails {
 function AnalyzeContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { isSignedIn } = useUser();
-  const { extractTranscript } = useYouTubeTranscript();
+  // For now, assume user is signed in - Google OAuth will be handled at app level  
+  const isSignedIn = true;
   const { extractWithFallback, overallProgress, extractionMethod } = useMultiModalExtraction();
   
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -119,33 +117,18 @@ function AnalyzeContent() {
       const videoDetails: VideoDetails = await detailsResponse.json();
       // Video details fetched
 
-      // Step 2: Try client-side extraction first
-      // Fetching transcript
+      // Initialize transcript variables  
       let transcript = null;
-      let transcriptSource = 'client';
-      
-      try {
-        // Attempt client-side extraction
-        console.log('🌐 Attempting client-side transcript extraction...');
-        transcript = await extractTranscript(youtubeId);
-        
-        if (transcript) {
-          console.log('✅ Client-side extraction successful');
-          // Transcript fetched successfully
-        }
-      } catch (clientError) {
-        console.warn('⚠️ Client-side extraction failed:', clientError);
-      }
-      
-      // Step 2b: Send transcript to server (or attempt server extraction as fallback)
-      // Processing transcript
+      let transcriptSource = 'server';
+
+      // Step 2: Process transcript with Gladia API
+      console.log('🚀 Starting Gladia API transcription...');
       const transcriptResponse = await fetch('/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           youtubeId, 
-          language,
-          transcript // Send client transcript if available
+          language
         })
       });
 
@@ -164,9 +147,9 @@ function AnalyzeContent() {
           return; // Don't throw error, just show payment modal
         }
         
-        // If server requires client extraction and we haven't done it yet
-        if (errorData.requiresClientExtraction && !transcript) {
-          console.log('⚠️ Server requires client extraction, but captions failed. Trying audio extraction...');
+        // If server extraction fails, try client-side audio extraction
+        if (errorData.requiresClientExtraction) {
+          console.log('⚠️ Server extraction failed. Trying client-side audio extraction...');
           
           // Last resort: try audio extraction as fallback
           try {

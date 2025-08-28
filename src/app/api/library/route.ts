@@ -1,46 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/prisma';
-import { getOrCreateUser } from '@/lib/user';
+import { getCurrentUser } from '@/lib/auth';
 
 // GET /api/library - Get user's saved video summaries
 export async function GET(request: NextRequest) {
   try {
-    // Check authentication - try both Clerk and Google OAuth
-    let userId: string | null = null;
-    
     const { searchParams } = new URL(request.url);
     const youtubeIdParam = searchParams.get('youtubeId');
     const googleIdParam = searchParams.get('googleId');
     
-    // Method 1: Try Google OAuth (new system)  
-    if (googleIdParam) {
-      const user = await prisma.user.findUnique({
-        where: { googleId: googleIdParam },
-        select: { id: true }
-      });
-      if (user) {
-        userId = user.id;
-      }
-    }
-    
-    // Method 2: Fallback to Clerk (old system)
-    if (!userId) {
-      const clerkAuth = await auth();
-      if (clerkAuth.userId) {
-        const user = await prisma.user.findUnique({
-          where: { clerkId: clerkAuth.userId },
-          select: { id: true, googleId: true }
-        });
-        if (user) {
-          userId = user.id;
-        }
-      }
-    }
-    
-    if (!userId) {
+    // Get current user using Google OAuth
+    const user = await getCurrentUser(googleIdParam || undefined);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    
+    const userId = user.id;
 
     // If specific youtubeId is requested, return that video
     if (youtubeIdParam) {
@@ -156,17 +131,14 @@ export async function GET(request: NextRequest) {
 // POST /api/library - Save a new video analysis to library
 export async function POST(request: NextRequest) {
   try {
-    const { userId: clerkUserId } = await auth();
-    if (!clerkUserId) {
+    const body = await request.json();
+    const { googleId } = body;
+    
+    // Get current user using Google OAuth
+    const user = await getCurrentUser(googleId);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    const user = await getOrCreateUser();
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    const body = await request.json();
     const {
       youtubeId,
       title,
@@ -254,17 +226,14 @@ export async function POST(request: NextRequest) {
 // DELETE /api/library - Remove video from library
 export async function DELETE(request: NextRequest) {
   try {
-    const { userId: clerkUserId } = await auth();
-    if (!clerkUserId) {
+    const { searchParams } = new URL(request.url);
+    const googleId = searchParams.get('googleId');
+    
+    // Get current user using Google OAuth
+    const user = await getCurrentUser(googleId || undefined);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    const user = await getOrCreateUser();
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    const { searchParams } = new URL(request.url);
     const youtubeId = searchParams.get('youtubeId');
 
     if (!youtubeId) {

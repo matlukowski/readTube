@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
 import OpenAI from 'openai';
 import { prisma } from '@/lib/prisma';
 import { formatTranscriptForAI } from '@/lib/transcript-formatter';
+import { getCurrentUser } from '@/lib/auth';
 
 interface ChatRequest {
   youtubeId: string;
@@ -16,50 +16,17 @@ interface ChatRequest {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication - try both Clerk and Google OAuth
-    let userId: string | null = null;
-    let googleId: string | undefined = undefined;
-    
     // Try reading request body once
     const body = await request.json();
-    const { youtubeId, question, language = 'pl' }: ChatRequest = body;
+    const { youtubeId, question, language = 'pl', googleId }: ChatRequest & { googleId: string } = body;
     
-    // Method 1: Try Google OAuth (new system)
-    try {
-      if (body.googleId && typeof body.googleId === 'string') {
-        googleId = body.googleId;
-        // Get user by googleId to get database userId
-        const user = await prisma.user.findUnique({
-          where: { googleId: googleId },
-          select: { id: true }
-        });
-        if (user) {
-          userId = user.id;
-        }
-      }
-    } catch {
-      // Body might not have googleId, continue
-    }
-    
-    // Method 2: Fallback to Clerk (old system)
-    if (!userId) {
-      const clerkAuth = await auth();
-      if (clerkAuth.userId) {
-        // Get user by clerkId
-        const user = await prisma.user.findUnique({
-          where: { clerkId: clerkAuth.userId },
-          select: { id: true, googleId: true }
-        });
-        if (user) {
-          userId = user.id;
-          googleId = user.googleId || undefined;
-        }
-      }
-    }
-    
-    if (!userId) {
+    // Get current user using Google OAuth
+    const user = await getCurrentUser(googleId);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    
+    const userId = user.id;
 
     // Validate input
     if (!youtubeId || !question) {
@@ -268,41 +235,17 @@ ${formattedTranscript}`;
  */
 export async function GET(request: NextRequest) {
   try {
-    // Get authentication
-    let userId: string | null = null;
-    
     const { searchParams } = new URL(request.url);
     const youtubeId = searchParams.get('youtubeId');
     const googleIdParam = searchParams.get('googleId');
     
-    // Method 1: Try Google OAuth (new system)  
-    if (googleIdParam) {
-      const user = await prisma.user.findUnique({
-        where: { googleId: googleIdParam },
-        select: { id: true }
-      });
-      if (user) {
-        userId = user.id;
-      }
-    }
-    
-    // Method 2: Fallback to Clerk (old system)
-    if (!userId) {
-      const clerkAuth = await auth();
-      if (clerkAuth.userId) {
-        const user = await prisma.user.findUnique({
-          where: { clerkId: clerkAuth.userId },
-          select: { id: true }
-        });
-        if (user) {
-          userId = user.id;
-        }
-      }
-    }
-    
-    if (!userId) {
+    // Get current user using Google OAuth
+    const user = await getCurrentUser(googleIdParam || undefined);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    
+    const userId = user.id;
 
     if (!youtubeId) {
       return NextResponse.json({ 

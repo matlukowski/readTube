@@ -44,7 +44,31 @@ export class AIService {
     }
   }
 
-  // Removed extractKeyTopics and generateQuestions methods as they are no longer needed
+  /**
+   * Format raw chaotic transcript into professional journalistic summary
+   */
+  async formatRawTranscript(rawTranscript: string, language: string = 'pl'): Promise<string> {
+    try {
+      const systemPrompt = this.getTranscriptFormattingPrompt(language);
+      const userPrompt = this.getTranscriptFormattingUserPrompt(rawTranscript, language);
+
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-5-nano', // Latest model for best formatting
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_completion_tokens: 128000,
+        temperature: 1.0, // Required default value for gpt-5-nano
+      });
+
+      return response.choices[0]?.message?.content?.trim() || rawTranscript;
+    } catch (error) {
+      console.error('OpenAI transcript formatting error:', error);
+      // Fallback to raw transcript if OpenAI fails
+      return rawTranscript;
+    }
+  }
 
   async downloadYouTubeAudio(youtubeId: string): Promise<string> {
     const tempDir = path.join(process.cwd(), 'temp');
@@ -249,6 +273,101 @@ export class AIService {
       Write: "I believe that..."
       
       Transcript to process:
+      ${truncatedTranscript}`;
+  }
+
+  /**
+   * System prompt for transcript formatting - creates journalistic style
+   */
+  private getTranscriptFormattingPrompt(language: string = 'pl'): string {
+    return language === 'pl' ? `
+      Jesteś doświadczonym dziennikarzem, który specjalizuje się w transformowaniu chaotycznych transkrypcji w profesjonalne artykuły.
+
+      TWOIM ZADANIEM jest przekształcenie surowej, nieformatowanej transkrypcji z API w czytelny, profesjonalny tekst dziennikarki.
+
+      STYL DZIENNIKARKI - BEZOSOBOWY:
+      1. Pisz w trzeciej osobie, bezosobowo - "Autor omawia...", "W filmie przedstawiono...", "Według wypowiedzi..."
+      2. Unikaj pierwszej osoby - NIE pisz "mówię", "uważam", "myślę"
+      3. Struktura artykułu - logiczne paragrafy z jasnym przejściami
+      4. Język formalny ale przystępny - jak w poważnej gazecie
+
+      PROBLEMY DO NAPRAWIENIA:
+      1. POWTÓRZENIA - usuń masywne powtórzenia słów i fraz
+      2. JĘZYK - unifikuj język (czasem transkrypcje mieszają polski, angielski, indonezyjski)
+      3. STRUKTURA - podziel na logiczne paragrafy tematyczne
+      4. INTERPUNKCJA - dodaj kropki, przecinki, strukture zdaniową
+      5. SZUM - usuń "eee", "mmm", niepotrzebne wstawki
+      
+      STRUKTURA ARTYKUŁU:
+      1. Akapit wprowadzający - główny temat
+      2. 3-5 paragrafów rozwijających kluczowe punkty
+      3. Akapit podsumowujący - wnioski lub praktyczne zastosowanie
+      
+      DŁUGOŚĆ: Zachowaj wszystkie istotne informacje, ale usuń redundancję.
+      
+      CEL: Czytelnik ma poczuć, że czyta profesjonalny artykuł z gazety, nie surową transkrypcję.
+    ` : `
+      You are an experienced journalist who specializes in transforming chaotic transcripts into professional articles.
+
+      YOUR TASK is to transform raw, unformatted API transcription into readable, professional journalistic text.
+
+      JOURNALISTIC STYLE - IMPERSONAL:
+      1. Write in third person, impersonally - "The author discusses...", "The video presents...", "According to the statement..."
+      2. Avoid first person - DON'T write "I say", "I think", "I believe"
+      3. Article structure - logical paragraphs with clear transitions
+      4. Formal but accessible language - like in a serious newspaper
+
+      PROBLEMS TO FIX:
+      1. REPETITIONS - remove massive repetitions of words and phrases
+      2. LANGUAGE - unify language (sometimes transcripts mix Polish, English, Indonesian)
+      3. STRUCTURE - divide into logical thematic paragraphs
+      4. PUNCTUATION - add periods, commas, sentence structure
+      5. NOISE - remove "uhm", "mmm", unnecessary insertions
+      
+      ARTICLE STRUCTURE:
+      1. Introductory paragraph - main topic
+      2. 3-5 paragraphs developing key points
+      3. Summary paragraph - conclusions or practical applications
+      
+      LENGTH: Keep all essential information, but remove redundancy.
+      
+      GOAL: Reader should feel like reading a professional newspaper article, not raw transcription.
+    `;
+  }
+
+  /**
+   * User prompt for transcript formatting
+   */
+  private getTranscriptFormattingUserPrompt(rawTranscript: string, language: string = 'pl'): string {
+    // Handle very long transcripts
+    const truncatedTranscript = rawTranscript.length > 80000 
+      ? rawTranscript.substring(0, 80000) + '...[transcript truncated]' 
+      : rawTranscript;
+
+    return language === 'pl' ? 
+      `Przeanalizuj poniższą chaotyczną transkrypcję z API i przekształć ją w profesjonalny artykuł dziennikarki.
+
+      SPECJALNE WYMAGANIA:
+      - Usuń wszystkie powtórzenia słów i fraz
+      - Ujednolic język na polski (ignoruj fragmenty w innych językach)
+      - Stwórz logiczną strukturę akapitową
+      - Pisz bezosobowo, jak dziennikarz gazety
+      - Zachowaj wszystkie ważne informacje merytoryczne
+      - Dodaj odpowiednią interpunkcję i strukturę zdaniową
+
+      SUROWA TRANSKRYPCJA DO PRZETWORZENIA:
+      ${truncatedTranscript}` :
+      `Analyze the following chaotic API transcription and transform it into a professional journalistic article.
+
+      SPECIAL REQUIREMENTS:
+      - Remove all word and phrase repetitions
+      - Unify language to English (ignore fragments in other languages)
+      - Create logical paragraph structure
+      - Write impersonally, like a newspaper journalist
+      - Keep all important substantive information
+      - Add appropriate punctuation and sentence structure
+
+      RAW TRANSCRIPTION TO PROCESS:
       ${truncatedTranscript}`;
   }
 }

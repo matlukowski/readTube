@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useUser } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Search, Clock, Eye, MessageCircle, Trash2, ExternalLink, AlertCircle } from 'lucide-react';
@@ -35,8 +34,10 @@ interface LibraryResponse {
 }
 
 export default function LibraryPage() {
-  const { isSignedIn } = useUser();
   const router = useRouter();
+  
+  // For now, assume user is signed in - Google OAuth will be handled at app level
+  const isSignedIn = true;
   
   const [videos, setVideos] = useState<LibraryVideo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,14 +48,6 @@ export default function LibraryPage() {
   const [selectedVideo, setSelectedVideo] = useState<LibraryVideo | null>(null);
   const [deletingVideo, setDeletingVideo] = useState<string>('');
   const [videoToDelete, setVideoToDelete] = useState<LibraryVideo | null>(null);
-
-  // Redirect to sign-in if not authenticated
-  useEffect(() => {
-    if (!isSignedIn) {
-      router.push('/sign-in');
-    }
-  }, [isSignedIn, router]);
-
 
   // Load library videos
   const loadVideos = async (page: number = 1, search: string = '') => {

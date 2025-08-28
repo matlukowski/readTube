@@ -1,13 +1,13 @@
 'use client';
 
-import { useUser } from '@clerk/nextjs';
 import Link from 'next/link';
 import AnalyzeBar from '@/components/analyze/AnalyzeBar';
 import Header from '@/components/layout/Header';
 import { Play, Brain, Sparkles, Users, Youtube } from 'lucide-react';
 
 export default function HomePage() {
-  const { isSignedIn } = useUser();
+  // For now, assume user is signed in - Google OAuth will be handled at app level
+  const isSignedIn = true;
 
   return (
     <div className="min-h-screen bg-base-200">
