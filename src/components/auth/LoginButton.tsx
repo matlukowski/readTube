@@ -16,7 +16,7 @@ export default function LoginButton({
   variant = 'primary', 
   fullWidth = false,
   showIcon = true,
-  text = 'Zaloguj się przez Google'
+  text = 'Zaloguj się'
 }: LoginButtonProps) {
   const { login, isLoading } = useAuth();
 
@@ -39,7 +39,7 @@ export default function LoginButton({
       onClick={login}
       disabled={isLoading}
       className={`btn ${sizeClass} ${variantClass} ${widthClass} gap-2`}
-      title="Zaloguj się używając Google OAuth"
+      title="Zaloguj się"
     >
       {isLoading ? (
         <Loader className="w-4 h-4 animate-spin" />

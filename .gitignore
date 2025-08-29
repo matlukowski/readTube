@@ -45,4 +45,12 @@ next-env.d.ts
 # temporary audio files
 /temp
 
+# cache and debug files
+*-watch.html
+*.cache
+*.tmp
+
+# whisper temporary files
+whisper-*
+
 .vercel

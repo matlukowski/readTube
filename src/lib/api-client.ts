@@ -1,12 +1,12 @@
 /**
  * Authenticated HTTP Client for API calls
- * Automatically includes Google OAuth tokens in Authorization headers
+ * Works with Clerk authentication - tokens are handled automatically by Clerk
  */
 
 'use client';
 
 export interface ApiClientOptions extends RequestInit {
-  includeAuth?: boolean; // Default: true
+  includeAuth?: boolean; // Default: true (but Clerk handles this automatically)
   timeout?: number; // Default: 30000ms
 }
 
@@ -18,25 +18,16 @@ export interface ApiResponse<T = any> {
 }
 
 /**
- * Get access token from localStorage (client-side only)
- */
-function getAccessToken(): string | null {
-  if (typeof window === 'undefined') {
-    return null; // Server-side
-  }
-  
-  return localStorage.getItem('google_access_token');
-}
-
-/**
- * Authenticated fetch wrapper that automatically includes Authorization headers
+ * Authenticated fetch wrapper
+ * Note: Clerk automatically handles authentication through middleware,
+ * so we don't need to manually add authorization headers
  */
 export async function authenticatedFetch(
   url: string,
   options: ApiClientOptions = {}
 ): Promise<Response> {
   const {
-    includeAuth = true,
+    includeAuth = true, // Kept for backward compatibility but not used
     timeout = 30000,
     headers = {},
     ...fetchOptions
@@ -48,15 +39,8 @@ export async function authenticatedFetch(
     ...headers,
   };
 
-  // Add Authorization header if requested and token available
-  if (includeAuth) {
-    const accessToken = getAccessToken();
-    if (accessToken) {
-      finalHeaders['Authorization'] = `Bearer ${accessToken}`;
-    } else {
-      console.warn('⚠️ No access token available for authenticated request');
-    }
-  }
+  // Clerk handles authentication automatically through cookies/session
+  // No need to manually add Authorization headers
 
   // Create abort controller for timeout
   const controller = new AbortController();
@@ -218,43 +202,39 @@ export async function apiDelete<T = any>(
 }
 
 /**
- * Check if user is authenticated (has valid token)
+ * Check if user is authenticated
+ * Note: This is deprecated - use Clerk's useAuth() hook instead
+ * @deprecated Use Clerk's useAuth() hook or useUser() hook
  */
 export function isAuthenticated(): boolean {
-  const token = getAccessToken();
-  return !!token;
+  console.warn('isAuthenticated() is deprecated. Use Clerk\'s useAuth() hook instead.');
+  // This is a placeholder - actual auth check should use Clerk hooks
+  return false;
 }
 
 /**
- * Get current user data from localStorage
+ * Get current user data
+ * Note: This is deprecated - use Clerk's useUser() hook instead
+ * @deprecated Use Clerk's useUser() hook
  */
 export function getCurrentUser(): any | null {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-  
-  try {
-    const userData = localStorage.getItem('user_data');
-    return userData ? JSON.parse(userData) : null;
-  } catch {
-    return null;
-  }
+  console.warn('getCurrentUser() is deprecated. Use Clerk\'s useUser() hook instead.');
+  return null;
 }
 
 /**
- * Handle authentication errors by clearing tokens and redirecting
+ * Handle authentication errors
+ * Note: Clerk handles authentication errors automatically
  */
 export function handleAuthError(error: string, redirectToLogin = true): void {
   console.warn('Authentication error:', error);
   
-  // Clear tokens
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem('google_access_token');
-    localStorage.removeItem('user_data');
-  }
+  // Clerk handles session management automatically
+  // No need to manually clear tokens
   
   // Redirect to login if requested
   if (redirectToLogin && typeof window !== 'undefined') {
+    // Clerk will redirect to sign-in automatically for protected routes
     window.location.href = '/';
   }
 }

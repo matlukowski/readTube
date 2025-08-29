@@ -1,74 +1,45 @@
 /**
- * Authentication helpers for API routes using Google OAuth
- * Replaces Clerk auth() function with Google OAuth token validation
+ * Authentication helpers for API routes using Clerk
+ * Provides compatibility layer for existing API routes
  */
 
 import { NextRequest } from 'next/server';
-import { getUserByGoogleId, getGoogleUserIdFromToken } from './google-oauth-helper';
+import { auth as clerkAuth } from '@clerk/nextjs/server';
+import { getOrCreateCurrentUser } from './user-helpers';
 
 export interface AuthResult {
-  googleId: string;
+  googleId: string; // Actually clerkId for compatibility
   userId: string; // Database user ID
   user: {
     id: string;
-    googleId: string;
+    googleId: string; // Actually clerkId for compatibility
     email: string;
     name?: string;
   };
 }
 
 /**
- * Authenticate API request using Google OAuth token
- * Can handle both Authorization header and body token
+ * Authenticate API request using Clerk
  */
 export async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
   try {
-    let accessToken: string | null = null;
+    const { userId: clerkUserId } = await clerkAuth();
     
-    // Method 1: Try Authorization header
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      accessToken = authHeader.substring(7);
+    if (!clerkUserId) {
+      throw new Error('No authenticated user');
     }
     
-    // Method 2: Try body token (for requests with token in body)
-    if (!accessToken) {
-      try {
-        const body = await request.clone().json();
-        accessToken = body.accessToken;
-      } catch {
-        // Body might not be JSON or might not have token
-      }
-    }
-    
-    // Method 3: Try query parameter
-    if (!accessToken) {
-      const url = new URL(request.url);
-      accessToken = url.searchParams.get('access_token');
-    }
-    
-    if (!accessToken) {
-      throw new Error('No access token provided');
-    }
-    
-    // Get Google user ID from token
-    const googleId = await getGoogleUserIdFromToken(accessToken);
-    
-    // Get user from database
-    const user = await getUserByGoogleId(googleId);
-    
-    if (!user) {
-      throw new Error('User not found in database');
-    }
+    // Get or create user in database
+    const dbUser = await getOrCreateCurrentUser(clerkUserId);
     
     return {
-      googleId,
-      userId: user.id,
+      googleId: clerkUserId, // Use clerkId as googleId for compatibility
+      userId: dbUser.id,
       user: {
-        id: user.id,
-        googleId: user.googleId!,
-        email: user.email,
-        name: user.name || undefined,
+        id: dbUser.id,
+        googleId: clerkUserId, // Use clerkId as googleId for compatibility
+        email: dbUser.email,
+        name: dbUser.name || undefined,
       }
     };
     
@@ -90,30 +61,12 @@ export async function auth(request: NextRequest): Promise<{ googleId: string; us
 }
 
 /**
- * Auth helper that works with session storage (for client-side calls)
+ * Auth helper for client-side - use Clerk's useAuth hook instead
+ * @deprecated Use Clerk's useAuth hook on client side
  */
 export async function authFromSession(): Promise<{ googleId: string; userId: string } | null> {
-  if (typeof window === 'undefined') {
-    return null; // Server-side
-  }
-  
-  try {
-    const accessToken = localStorage.getItem('google_access_token');
-    const userData = localStorage.getItem('user_data');
-    
-    if (!accessToken || !userData) {
-      return null;
-    }
-    
-    const user = JSON.parse(userData);
-    
-    return {
-      googleId: user.googleId,
-      userId: user.id // This should be set when user logs in
-    };
-  } catch {
-    return null;
-  }
+  console.warn('authFromSession is deprecated. Use Clerk useAuth hook instead.');
+  return null;
 }
 
 /**

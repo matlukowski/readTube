@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
-import { GoogleOAuthProvider } from '@react-oauth/google';
+import { ClerkProvider } from '@clerk/nextjs';
 import { AuthProvider } from '@/contexts/AuthContext';
 
 const inter = Inter({ subsets: ["latin"] });
@@ -17,22 +17,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-  
-  if (!googleClientId) {
-    console.error('NEXT_PUBLIC_GOOGLE_CLIENT_ID is not configured');
-  }
-  
   return (
     <html lang="en" data-theme="dark">
       <body className={inter.className}>
-        <GoogleOAuthProvider clientId={googleClientId || ''}>
+        <ClerkProvider>
           <AuthProvider>
             <ThemeProvider>
               {children}
             </ThemeProvider>
           </AuthProvider>
-        </GoogleOAuthProvider>
+        </ClerkProvider>
       </body>
     </html>
   );

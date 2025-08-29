@@ -51,7 +51,7 @@ export default function AuthGuard({
         
         <LoginButton 
           size="lg" 
-          text="Zaloguj się przez Google"
+          text="Zaloguj się"
           showIcon={true}
         />
         

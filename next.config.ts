@@ -33,6 +33,20 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'lh6.googleusercontent.com',
       },
+      // Clerk profile images
+      {
+        protocol: 'https',
+        hostname: 'img.clerk.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'images.clerk.dev',
+      },
+      // Fallback avatar service
+      {
+        protocol: 'https',
+        hostname: 'ui-avatars.com',
+      },
     ],
   },
 };
