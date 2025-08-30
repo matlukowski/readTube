@@ -75,10 +75,13 @@ export async function POST(request: NextRequest) {
     if (!transcript) {
       console.log('🌊 Starting optimized streaming Whisper transcription workflow...');
       
+      // Initialize variables outside try-catch to avoid undefined errors
+      let videoDurationMinutes = 0;
+      let optimalModelSize: 'tiny' | 'small' | 'base' = 'tiny'; // Default to tiny for best performance
+      
       try {
         // Get video info first to determine optimal model size
         const youtubeAPI = new YouTubeAPI(process.env.YOUTUBE_API_KEY!);
-        let videoDurationMinutes = 0;
         try {
           const videoDetails = await youtubeAPI.getVideoDetails(youtubeId);
           videoDurationMinutes = youtubeAPI.parseDurationToMinutes(videoDetails.contentDetails?.duration || 'PT0S');
@@ -87,7 +90,6 @@ export async function POST(request: NextRequest) {
         }
         
         // Smart model selection based on duration for optimal speed/quality balance
-        let optimalModelSize: 'tiny' | 'small' | 'base' = 'tiny';
         if (videoDurationMinutes < 5) {
           optimalModelSize = 'small'; // Better quality for short videos
         } else if (videoDurationMinutes < 15) {

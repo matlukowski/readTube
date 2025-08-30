@@ -1,11 +1,15 @@
 // YouTube audio extraction and transcription using local Whisper
-// Optimized streaming version for faster processing
+// Optimized streaming version with fallback mechanisms for reliability
 
 import ytdl from '@distube/ytdl-core';
+import youtubeDl from 'youtube-dl-exec';
 import { transcribeAudioLocally, isLocalTranscriptionAvailable, LocalTranscriptionResult, preloadWhisperModels } from './local-transcription';
 import { Readable, Transform } from 'stream';
 import { spawn } from 'child_process';
 import { pipeline as streamPipeline } from 'stream/promises';
+import fs from 'fs/promises';
+import path from 'path';
+import os from 'os';
 
 export interface AudioExtractionResult {
   transcript: string;
@@ -38,6 +42,59 @@ export interface AudioExtractionOptions {
   enableStreaming?: boolean; // Enable streaming processing for better performance
   chunkSize?: number; // Size of processing chunks in seconds (default 15)
   onProgress?: (progress: { percent: number; processedSeconds: number; totalSeconds: number }) => void;
+}
+
+/**
+ * Robust video info extraction with ytdl-core fallback to youtube-dl-exec
+ * Handles YouTube's frequent HTML structure changes
+ */
+async function getVideoInfoWithFallback(videoUrl: string, youtubeId: string): Promise<any> {
+  console.log(`🔄 Attempting to get video info for ${youtubeId}...`);
+  
+  // Primary: Try ytdl-core first (faster when it works)
+  try {
+    console.log(`📡 Primary: Trying ytdl-core...`);
+    const info = await ytdl.getInfo(videoUrl);
+    console.log(`✅ Primary method successful: ytdl-core`);
+    return info;
+  } catch (ytdlError) {
+    console.warn(`⚠️ ytdl-core failed:`, ytdlError instanceof Error ? ytdlError.message : ytdlError);
+  }
+
+  // Fallback: Use youtube-dl-exec (more reliable, slower)
+  try {
+    console.log(`🔄 Fallback: Trying youtube-dl-exec...`);
+    
+    // Get basic info using youtube-dl-exec
+    const info = await youtubeDl(videoUrl, {
+      dumpSingleJson: true,
+      noWarnings: true,
+      noPlaylist: true,
+      format: 'bestaudio',
+    });
+
+    // Transform youtube-dl-exec format to ytdl-core compatible format
+    const transformedInfo = {
+      videoDetails: {
+        title: info.title || 'Unknown Title',
+        lengthSeconds: String(info.duration || 0),
+        author: { name: info.uploader || 'Unknown' }
+      },
+      formats: info.formats ? info.formats.filter((f: any) => f.acodec && f.acodec !== 'none').map((f: any) => ({
+        container: f.ext,
+        audioCodec: f.acodec,
+        url: f.url,
+        bitrate: f.abr || 128
+      })) : []
+    };
+
+    console.log(`✅ Fallback method successful: youtube-dl-exec`);
+    return transformedInfo;
+    
+  } catch (fallbackError) {
+    console.error(`❌ Fallback failed:`, fallbackError instanceof Error ? fallbackError.message : fallbackError);
+    throw new Error(`All video info extraction methods failed. Last error: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`);
+  }
 }
 
 /**
@@ -113,15 +170,15 @@ export async function extractAndTranscribeAudioStreaming(
   const videoUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
   console.log(`🔧 Video URL: ${videoUrl}`);
 
-  // Step 1: Get video info (parallel with model pre-loading)
-  console.log('📡 Step 1: Getting video info from YouTube...');
+  // Step 1: Get video info with robust fallback mechanism
+  console.log('📡 Step 1: Getting video info from YouTube (with fallback)...');
   let info;
   try {
-    info = await ytdl.getInfo(videoUrl);
-    console.log(`✅ Step 1 complete: Video info retrieved`);
-  } catch (ytdlError) {
-    console.error(`❌ Step 1 failed: ytdl.getInfo error:`, ytdlError);
-    throw ytdlError;
+    info = await getVideoInfoWithFallback(videoUrl, youtubeId);
+    console.log(`✅ Step 1 complete: Video info retrieved via fallback system`);
+  } catch (infoError) {
+    console.error(`❌ Step 1 failed: All video info methods failed:`, infoError);
+    throw infoError;
   }
     
   try {
@@ -169,6 +226,10 @@ export async function extractAndTranscribeAudioStreaming(
     const audioProcessor = new StreamingAudioProcessor();
     let transcriptionResult: LocalTranscriptionResult | null = null;
     let transcriptionError: Error | null = null;
+    
+    // Progress throttling to avoid console flooding
+    let lastProgressUpdate = 0;
+    const PROGRESS_THROTTLE_MS = 2000; // Update progress every 2 seconds
 
     // Create audio stream
     const audioStream = ytdl(videoUrl, {
@@ -233,8 +294,10 @@ export async function extractAndTranscribeAudioStreaming(
     audioStream.on('data', (chunk) => {
       audioProcessor.addChunk(chunk);
       
-      // Update progress
-      if (onProgress) {
+      // Throttled progress updates to avoid console flooding
+      const now = Date.now();
+      if (onProgress && (now - lastProgressUpdate > PROGRESS_THROTTLE_MS)) {
+        lastProgressUpdate = now;
         const progressPercent = Math.min(95, (audioProcessor.totalBytes / (durationSeconds * 1000)) * 100);
         onProgress({
           percent: progressPercent,
@@ -273,7 +336,7 @@ export async function extractAndTranscribeAudioStreaming(
     console.log(`✅ Streaming transcription completed in ${totalProcessingTime}ms`);
     console.log(`📝 Transcript: ${transcriptionResult.transcript.length} characters`);
     
-    // Final progress update
+    // Final progress update (not throttled - always show completion)
     if (onProgress) {
       onProgress({
         percent: 100,
@@ -361,15 +424,15 @@ export async function extractAndTranscribeAudio(
   const videoUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
   console.log(`🔧 Debug: Video URL: ${videoUrl}`);
 
-  // Step 1: Get video info
-  console.log('📡 Step 1: Getting video info from YouTube...');
+  // Step 1: Get video info with robust fallback mechanism
+  console.log('📡 Step 1: Getting video info from YouTube (with fallback)...');
   let info;
   try {
-    info = await ytdl.getInfo(videoUrl);
-    console.log(`✅ Step 1 complete: Video info retrieved`);
-  } catch (ytdlError) {
-    console.error(`❌ Step 1 failed: ytdl.getInfo error:`, ytdlError);
-    throw ytdlError;
+    info = await getVideoInfoWithFallback(videoUrl, youtubeId);
+    console.log(`✅ Step 1 complete: Video info retrieved via fallback system`);
+  } catch (infoError) {
+    console.error(`❌ Step 1 failed: All video info methods failed:`, infoError);
+    throw infoError;
   }
     
   try {

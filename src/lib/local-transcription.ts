@@ -563,8 +563,8 @@ export class WhisperTranscription {
       // Get the transcription pipeline
       const transcriber = await this.getWhisperPipeline(modelSize);
 
-      // Process audio buffer
-      const { audio, sampleRate } = await this.processAudioBuffer(audioBuffer);
+      // Process audio buffer  
+      let { audio, sampleRate } = await this.processAudioBuffer(audioBuffer);
       console.log(`🎵 Audio processed: ${audio.length} samples at ${sampleRate}Hz`);
 
       // Perform transcription with optimized chunking for speed and memory efficiency
