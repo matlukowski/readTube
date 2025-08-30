@@ -117,11 +117,13 @@ export async function logVideoUsage({
   videoTitle,
   videoDuration,
   minutesUsed,
+  userId
 }: {
   youtubeId: string;
   videoTitle: string;
   videoDuration: string;
   minutesUsed: number;
+  userId: string;
 }): Promise<boolean> {
   try {
     // If Stripe is not enabled, skip usage logging (demo mode)
@@ -130,7 +132,11 @@ export async function logVideoUsage({
       return true; // Return success but don't actually log
     }
 
-    const user = await getOrCreateUser();
+    // Get user from database
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+    
     if (!user) {
       console.error('❌ Cannot log usage: user not found');
       return false;
@@ -168,53 +174,3 @@ export async function logVideoUsage({
   }
 }
 
-/**
- * Get user's current usage summary
- */
-export async function getUserUsageSummary() {
-  try {
-    // If Stripe is not enabled, return demo mode values
-    if (!isStripeEnabled()) {
-      return {
-        user: {
-          id: 'demo-user',
-          email: 'demo@readtube.app',
-          subscriptionStatus: 'DEMO',
-        },
-        usage: {
-          minutesUsed: 0,
-          minutesPurchased: 999999, // Unlimited in demo mode
-          remainingMinutes: 999999,
-          canAnalyze: true,
-          percentageUsed: 0,
-        },
-      };
-    }
-
-    const user = await getOrCreateUser();
-    if (!user) {
-      return null;
-    }
-
-    const remainingMinutes = getRemainingMinutes(user.minutesUsed, user.minutesPurchased);
-    const canAnalyze = remainingMinutes > 0;
-
-    return {
-      user: {
-        id: user.id,
-        email: user.email,
-        subscriptionStatus: user.subscriptionStatus,
-      },
-      usage: {
-        minutesUsed: user.minutesUsed,
-        minutesPurchased: user.minutesPurchased,
-        remainingMinutes,
-        canAnalyze,
-        percentageUsed: Math.round((user.minutesUsed / user.minutesPurchased) * 100),
-      },
-    };
-  } catch (error) {
-    console.error('Error getting usage summary:', error);
-    return null;
-  }
-}

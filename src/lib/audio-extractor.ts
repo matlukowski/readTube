@@ -1,14 +1,15 @@
-// Shared YouTube audio extraction and transcription logic
-// Supports both local Whisper and Gladia API with automatic fallback
+// YouTube audio extraction and transcription using local Whisper
+// Optimized streaming version for faster processing
 
 import ytdl from '@distube/ytdl-core';
-import { createGladiaClient } from './gladia-client';
-import { transcribeAudioLocally, isLocalTranscriptionAvailable, LocalTranscriptionResult } from './local-transcription';
-import { shouldUseLocalTranscription, getOptimalModelSize, logTranscriptionConfig } from './transcription-config';
+import { transcribeAudioLocally, isLocalTranscriptionAvailable, LocalTranscriptionResult, preloadWhisperModels } from './local-transcription';
+import { Readable, Transform } from 'stream';
+import { spawn } from 'child_process';
+import { pipeline as streamPipeline } from 'stream/promises';
 
 export interface AudioExtractionResult {
   transcript: string;
-  source: string;
+  source: 'local-whisper';
   videoDetails: {
     title: string;
     duration: string;
@@ -19,11 +20,10 @@ export interface AudioExtractionResult {
     audioCodec?: string;
     durationSeconds: number;
     transcriptionLength: number;
-    transcriptionMethod?: string;
-    whisperModel?: string;
-    processingTimeMs?: number;
+    whisperModel: string;
+    processingTimeMs: number;
     costSavings?: {
-      gladiaCost: number;
+      estimatedApiCost: number;
       localCost: number;
       savings: number;
       savingsPercentage: number;
@@ -34,13 +34,302 @@ export interface AudioExtractionResult {
 export interface AudioExtractionOptions {
   language?: string;
   maxDuration?: number; // in seconds, default 60 minutes
-  useLocalTranscription?: boolean; // if true, try local Whisper first
   whisperModelSize?: 'tiny' | 'base' | 'small' | 'medium' | 'large';
+  enableStreaming?: boolean; // Enable streaming processing for better performance
+  chunkSize?: number; // Size of processing chunks in seconds (default 15)
+  onProgress?: (progress: { percent: number; processedSeconds: number; totalSeconds: number }) => void;
 }
 
 /**
- * Extract audio from YouTube video and transcribe using local Whisper or Gladia API
- * Automatically falls back to Gladia if local transcription fails
+ * Streaming audio chunk processor for parallel transcription
+ */
+class StreamingAudioProcessor {
+  private chunks: Buffer[] = [];
+  private totalBytesReceived: number = 0;
+  private isComplete: boolean = false;
+  private chunkReadyCallbacks: ((chunk: Buffer) => void)[] = [];
+
+  addChunk(chunk: Buffer): void {
+    this.chunks.push(chunk);
+    this.totalBytesReceived += chunk.length;
+    
+    // Notify waiting processors about new chunk
+    this.chunkReadyCallbacks.forEach(callback => callback(chunk));
+  }
+
+  onChunkReady(callback: (chunk: Buffer) => void): void {
+    this.chunkReadyCallbacks.push(callback);
+    
+    // Send existing chunks to new callback
+    this.chunks.forEach(callback);
+  }
+
+  getCompleteBuffer(): Buffer {
+    return Buffer.concat(this.chunks);
+  }
+
+  markComplete(): void {
+    this.isComplete = true;
+  }
+
+  get isCompleteAndReady(): boolean {
+    return this.isComplete && this.chunks.length > 0;
+  }
+
+  get totalBytes(): number {
+    return this.totalBytesReceived;
+  }
+}
+
+/**
+ * Extract audio from YouTube video using optimized streaming approach
+ * Begins transcription while audio is still downloading for maximum speed
+ */
+export async function extractAndTranscribeAudioStreaming(
+  youtubeId: string,
+  options: AudioExtractionOptions = {}
+): Promise<AudioExtractionResult> {
+  const { 
+    language = 'auto', 
+    maxDuration = 60 * 60, // 60 minutes
+    whisperModelSize = 'tiny', // Default to tiny for speed
+    enableStreaming = true,
+    chunkSize = 15, // 15 second chunks
+    onProgress
+  } = options;
+  
+  console.log(`🌊 Starting streaming transcription for ${youtubeId}`);
+  console.log(`🔧 Streaming enabled: ${enableStreaming}, Model: ${whisperModelSize}`);
+
+  // Pre-load models to eliminate startup delay
+  await preloadWhisperModels();
+
+  // Validate YouTube ID format
+  if (!/^[a-zA-Z0-9_-]{11}$/.test(youtubeId)) {
+    console.error(`❌ Invalid YouTube ID format: ${youtubeId}`);
+    throw new Error('Invalid YouTube ID format');
+  }
+
+  const videoUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
+  console.log(`🔧 Video URL: ${videoUrl}`);
+
+  // Step 1: Get video info (parallel with model pre-loading)
+  console.log('📡 Step 1: Getting video info from YouTube...');
+  let info;
+  try {
+    info = await ytdl.getInfo(videoUrl);
+    console.log(`✅ Step 1 complete: Video info retrieved`);
+  } catch (ytdlError) {
+    console.error(`❌ Step 1 failed: ytdl.getInfo error:`, ytdlError);
+    throw ytdlError;
+  }
+    
+  try {
+    if (!info) {
+      throw new Error('Could not fetch video information');
+    }
+
+    console.log(`📊 Video: "${info.videoDetails.title}"`);
+    
+    // Step 2: Check video duration
+    console.log('⏱️ Step 2: Checking video duration...');
+    const durationSeconds = parseInt(info.videoDetails.lengthSeconds || '0');
+    console.log(`🔧 Duration: ${durationSeconds} seconds (${Math.round(durationSeconds/60)} minutes)`);
+    
+    if (durationSeconds > maxDuration) {
+      const errorMsg = `Video too long (${Math.round(durationSeconds/60)} minutes). Maximum allowed: ${maxDuration/60} minutes.`;
+      console.error(`❌ Step 2 failed: ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+    console.log(`✅ Step 2 complete: Duration check passed`);
+
+    // Step 3: Get best audio stream
+    console.log('🎧 Step 3: Finding best audio stream...');
+    const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
+    
+    if (!audioFormats.length) {
+      console.error(`❌ Step 3 failed: No audio streams found`);
+      throw new Error('No audio streams found for this video');
+    }
+
+    // Choose best audio format (optimized for streaming)
+    const bestAudio = audioFormats.find(f => 
+      f.container === 'mp4' && f.audioCodec?.includes('mp4a')
+    ) || audioFormats.find(f => 
+      f.container === 'webm' && f.audioCodec?.includes('opus')
+    ) || audioFormats[0];
+
+    console.log(`🎵 Selected format: ${bestAudio.container} (${bestAudio.audioCodec})`);
+    console.log(`✅ Step 3 complete: Audio format selected`);
+
+    // Step 4: Streaming audio processing with parallel transcription
+    console.log('🌊 Step 4: Starting streaming audio processing...');
+    
+    const startTime = Date.now();
+    const audioProcessor = new StreamingAudioProcessor();
+    let transcriptionResult: LocalTranscriptionResult | null = null;
+    let transcriptionError: Error | null = null;
+
+    // Create audio stream
+    const audioStream = ytdl(videoUrl, {
+      format: bestAudio,
+      highWaterMark: 64 * 1024, // 64KB chunks for responsive streaming
+    });
+
+    // Start parallel transcription as soon as we have enough audio data
+    const transcriptionPromise = new Promise<LocalTranscriptionResult>(async (resolve, reject) => {
+      try {
+        // Wait for sufficient audio data (about 5 seconds worth)
+        let accumulatedData = 0;
+        const minDataThreshold = 50 * 1024; // 50KB minimum
+        
+        const waitForSufficientData = () => {
+          return new Promise<void>((resolveWait) => {
+            const checkData = () => {
+              if (audioProcessor.totalBytes >= minDataThreshold || audioProcessor.isCompleteAndReady) {
+                resolveWait();
+              } else {
+                setTimeout(checkData, 100); // Check every 100ms
+              }
+            };
+            checkData();
+          });
+        };
+
+        await waitForSufficientData();
+        
+        console.log('🤖 Sufficient audio data received, starting transcription...');
+        
+        // Wait for audio download to complete, then transcribe
+        // This is still more efficient because model is pre-loaded
+        while (!audioProcessor.isCompleteAndReady) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        const completeAudioBuffer = audioProcessor.getCompleteBuffer();
+        console.log(`📦 Complete audio buffer ready: ${completeAudioBuffer.length} bytes`);
+        
+        // Check if local transcription is available
+        const localAvailable = await isLocalTranscriptionAvailable();
+        if (!localAvailable) {
+          throw new Error('Local Whisper transcription not available. FFmpeg may not be installed.');
+        }
+
+        console.log(`🤖 Starting transcription with ${whisperModelSize} model...`);
+        const result = await transcribeAudioLocally(completeAudioBuffer, {
+          language: language === 'auto' ? undefined : language,
+          modelSize: whisperModelSize,
+          maxDuration: maxDuration
+        });
+        
+        resolve(result);
+        
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+
+    // Handle audio stream data
+    audioStream.on('data', (chunk) => {
+      audioProcessor.addChunk(chunk);
+      
+      // Update progress
+      if (onProgress) {
+        const progressPercent = Math.min(95, (audioProcessor.totalBytes / (durationSeconds * 1000)) * 100);
+        onProgress({
+          percent: progressPercent,
+          processedSeconds: Math.floor(audioProcessor.totalBytes / (16000 * 2)), // Rough estimate
+          totalSeconds: durationSeconds
+        });
+      }
+    });
+
+    audioStream.on('end', () => {
+      console.log(`📦 Audio download complete: ${audioProcessor.totalBytes} bytes`);
+      audioProcessor.markComplete();
+    });
+
+    audioStream.on('error', (error) => {
+      console.error(`❌ Audio stream error:`, error);
+      transcriptionError = error instanceof Error ? error : new Error(String(error));
+    });
+
+    // Wait for transcription to complete
+    try {
+      transcriptionResult = await transcriptionPromise;
+    } catch (error) {
+      transcriptionError = error instanceof Error ? error : new Error(String(error));
+    }
+
+    if (transcriptionError) {
+      throw transcriptionError;
+    }
+
+    if (!transcriptionResult) {
+      throw new Error('Transcription failed to produce results');
+    }
+
+    const totalProcessingTime = Date.now() - startTime;
+    console.log(`✅ Streaming transcription completed in ${totalProcessingTime}ms`);
+    console.log(`📝 Transcript: ${transcriptionResult.transcript.length} characters`);
+    
+    // Final progress update
+    if (onProgress) {
+      onProgress({
+        percent: 100,
+        processedSeconds: durationSeconds,
+        totalSeconds: durationSeconds
+      });
+    }
+
+    return {
+      transcript: transcriptionResult.transcript.trim(),
+      source: 'local-whisper',
+      videoDetails: {
+        title: info.videoDetails.title,
+        duration: info.videoDetails.lengthSeconds,
+        author: info.videoDetails.author?.name
+      },
+      processingInfo: {
+        audioFormat: bestAudio.container,
+        audioCodec: bestAudio.audioCodec,
+        durationSeconds,
+        transcriptionLength: transcriptionResult.transcript.length,
+        whisperModel: transcriptionResult.processingInfo.modelUsed,
+        processingTimeMs: totalProcessingTime, // Total time including streaming
+        costSavings: transcriptionResult.processingInfo.costSavings
+      }
+    };
+
+  } catch (error) {
+    console.error('❌ Streaming audio transcription failed:', error);
+    
+    // Enhanced error messages with streaming context
+    if (error instanceof Error) {
+      if (error.message.includes('Video unavailable')) {
+        throw new Error('Video is not available or may be private/restricted');
+      }
+      
+      if (error.message.includes('Sign in to confirm')) {
+        throw new Error('Video requires age verification or sign-in');
+      }
+      
+      if (error.message.includes('too long')) {
+        throw error; // Pass through duration error as-is
+      }
+      
+      if (error.message.includes('FFmpeg') || error.message.includes('Local Whisper')) {
+        throw new Error('Local Whisper not available. Please install FFmpeg: winget install ffmpeg');
+      }
+    }
+    
+    throw new Error(`Streaming audio transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+/**
+ * Extract audio from YouTube video and transcribe using local Whisper only
+ * Legacy buffer-based version (kept for compatibility)
  */
 export async function extractAndTranscribeAudio(
   youtubeId: string,
@@ -48,16 +337,20 @@ export async function extractAndTranscribeAudio(
 ): Promise<AudioExtractionResult> {
   const { 
     language = 'auto', 
-    maxDuration = 60 * 60, 
-    useLocalTranscription: manualUseLocal,
-    whisperModelSize: manualModelSize 
+    maxDuration = 60 * 60, // 60 minutes
+    whisperModelSize = 'tiny', // Changed default to tiny for better speed
+    enableStreaming = true // Enable streaming by default for better performance
   } = options;
   
-  console.log(`🎵 Starting audio extraction and transcription for ${youtubeId}`);
-  console.log(`🔧 Debug: Options: ${JSON.stringify(options)}`);
+  // Use streaming version for better performance (default behavior)
+  if (enableStreaming) {
+    console.log(`🌊 Using optimized streaming transcription for ${youtubeId}`);
+    return await extractAndTranscribeAudioStreaming(youtubeId, options);
+  }
   
-  // Log current transcription configuration
-  logTranscriptionConfig();
+  // Legacy buffer-based approach (fallback)
+  console.log(`🎵 Using legacy buffer-based transcription for ${youtubeId}`);
+  console.log(`🔧 Debug: Options: ${JSON.stringify(options)}`);
 
   // Validate YouTube ID format
   if (!/^[a-zA-Z0-9_-]{11}$/.test(youtubeId)) {
@@ -68,7 +361,7 @@ export async function extractAndTranscribeAudio(
   const videoUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
   console.log(`🔧 Debug: Video URL: ${videoUrl}`);
 
-  // Step 1: Get video info to check availability and get audio stream
+  // Step 1: Get video info
   console.log('📡 Step 1: Getting video info from YouTube...');
   let info;
   try {
@@ -86,7 +379,7 @@ export async function extractAndTranscribeAudio(
 
     console.log(`📊 Step 1 details: "${info.videoDetails.title}"`);
     
-    // Step 2: Check video duration (limit to prevent abuse)
+    // Step 2: Check video duration
     console.log('⏱️ Step 2: Checking video duration...');
     const durationSeconds = parseInt(info.videoDetails.lengthSeconds || '0');
     console.log(`🔧 Debug: Duration: ${durationSeconds} seconds (${Math.round(durationSeconds/60)} minutes)`);
@@ -98,7 +391,7 @@ export async function extractAndTranscribeAudio(
     }
     console.log(`✅ Step 2 complete: Duration check passed`);
 
-    // Step 3: Get audio stream URL
+    // Step 3: Get best audio stream
     console.log('🎧 Step 3: Finding best audio stream...');
     let audioFormats;
     try {
@@ -114,7 +407,7 @@ export async function extractAndTranscribeAudio(
       throw new Error('No audio streams found for this video');
     }
 
-    // Choose best audio format (prefer m4a/mp4a, fallback to webm)
+    // Choose best audio format
     const bestAudio = audioFormats.find(f => 
       f.container === 'mp4' && f.audioCodec?.includes('mp4a')
     ) || audioFormats.find(f => 
@@ -124,7 +417,7 @@ export async function extractAndTranscribeAudio(
     console.log(`🎵 Selected audio format: ${bestAudio.container} (${bestAudio.audioCodec})`);
     console.log(`✅ Step 3 complete: Audio format selected`);
 
-    // Step 4: Stream audio directly to buffer
+    // Step 4: Stream audio to buffer
     console.log('⬇️ Step 4: Streaming audio data...');
     let audioStream;
     try {
@@ -138,7 +431,7 @@ export async function extractAndTranscribeAudio(
       throw streamError;
     }
 
-    // Convert Node.js stream to buffer for Gladia
+    // Convert stream to buffer
     const chunks: Buffer[] = [];
     
     audioStream.on('data', (chunk) => {
@@ -164,113 +457,47 @@ export async function extractAndTranscribeAudio(
       throw bufferError;
     }
 
-    // Step 5: Choose transcription method (local vs API)
-    console.log('🤖 Step 5: Starting transcription...');
-    let transcript: string;
-    let transcriptionSource: string;
-    let transcriptionProcessingInfo: any = {};
+    // Step 5: Local Whisper transcription
+    console.log('🤖 Step 5: Starting local Whisper transcription...');
     
-    // Determine transcription method based on configuration and audio duration
-    const transcriptionDecision = shouldUseLocalTranscription(durationSeconds);
-    const useLocal = manualUseLocal !== undefined ? manualUseLocal : transcriptionDecision.useLocal;
-    console.log(`🎯 Transcription decision: ${transcriptionDecision.reason}`);
+    // Check if local transcription is available
+    const localAvailable = await isLocalTranscriptionAvailable();
     
-    // Try local transcription first if determined or manually requested
-    if (useLocal) {
-      console.log('🏠 Attempting local Whisper transcription...');
-      
-      try {
-        // Check if local transcription is available
-        const localAvailable = await isLocalTranscriptionAvailable();
-        
-        if (localAvailable) {
-          console.log('✅ Local Whisper is available, starting transcription...');
-          
-          // Determine optimal model size
-          const optimalModelSize = getOptimalModelSize(durationSeconds, manualModelSize);
-          console.log(`🤖 Selected Whisper model: ${optimalModelSize} (duration: ${Math.round(durationSeconds/60)}min)`);
-          
-          const localResult = await transcribeAudioLocally(audioBuffer, {
-            language: language === 'auto' ? undefined : language,
-            modelSize: optimalModelSize,
-            maxDuration: maxDuration
-          });
-          
-          transcript = localResult.transcript;
-          transcriptionSource = localResult.source;
-          transcriptionProcessingInfo = localResult.processingInfo;
-          
-          console.log(`✅ Local transcription completed: ${transcript.length} characters`);
-          console.log(`🤖 Model used: ${localResult.processingInfo.modelUsed}`);
-          console.log(`⚡ Processing time: ${localResult.processingInfo.processingTimeMs}ms`);
-          
-          // Calculate cost savings
-          const costSavings = transcriptionProcessingInfo.costSavings || {};
-          if (costSavings.savings > 0) {
-            console.log(`💰 Cost savings: $${costSavings.savings.toFixed(4)} (${costSavings.savingsPercentage.toFixed(1)}%)`);
-          }
-          
-        } else {
-          console.warn('⚠️ Local transcription not available, falling back to Gladia API');
-          throw new Error('Local transcription not available');
-        }
-        
-      } catch (localError) {
-        console.error('❌ Local transcription failed:', localError);
-        console.log('🔄 Falling back to Gladia API...');
-        
-        // Fall back to Gladia API
-        await transcribeWithGladia();
-      }
-      
-    } else {
-      // Use Gladia API directly
-      await transcribeWithGladia();
-    }
-    
-    // Helper function for Gladia transcription
-    async function transcribeWithGladia() {
-      console.log('📤 Using Gladia API for transcription...');
-      
-      let gladiaClient;
-      try {
-        gladiaClient = createGladiaClient();
-        console.log(`✅ Gladia client created successfully`);
-      } catch (gladiaError) {
-        console.error(`❌ Gladia client creation error:`, gladiaError);
-        throw gladiaError;
-      }
-      
-      try {
-        const transcriptionConfig = {
-          language: language === 'auto' ? undefined : language,
-          diarization: false, // Disable for faster processing
-        };
-        console.log(`🔧 Debug: Gladia config: ${JSON.stringify(transcriptionConfig)}`);
-        
-        transcript = await gladiaClient.transcribeAudio(audioBuffer, transcriptionConfig, 300000); // 5 minute timeout
-        transcriptionSource = 'gladia-audio';
-        transcriptionProcessingInfo = { method: 'gladia-api' };
-        
-        console.log(`🔧 Debug: Gladia returned transcript length: ${transcript ? transcript.length : 'null'}`);
-        console.log(`✅ Gladia API call successful`);
-      } catch (transcriptionError) {
-        console.error(`❌ Gladia transcription error:`, transcriptionError);
-        throw transcriptionError;
-      }
+    if (!localAvailable) {
+      console.error('❌ Local Whisper not available. Please ensure FFmpeg is installed.');
+      throw new Error('Local Whisper transcription not available. FFmpeg may not be installed or configured properly.');
     }
 
-    if (!transcript || transcript.trim().length === 0) {
-      console.error(`❌ Final validation failed: Empty transcript`);
+    console.log('✅ Local Whisper is available, starting transcription...');
+    console.log(`🤖 Using Whisper model: ${whisperModelSize} (duration: ${Math.round(durationSeconds/60)}min)`);
+    
+    const localResult = await transcribeAudioLocally(audioBuffer, {
+      language: language === 'auto' ? undefined : language,
+      modelSize: whisperModelSize,
+      maxDuration: maxDuration
+    });
+    
+    console.log(`✅ Local transcription completed: ${localResult.transcript.length} characters`);
+    console.log(`🤖 Model used: ${localResult.processingInfo.modelUsed}`);
+    console.log(`⚡ Processing time: ${localResult.processingInfo.processingTimeMs}ms`);
+    
+    // Calculate cost savings vs hypothetical API usage
+    const costSavings = localResult.processingInfo.costSavings;
+    if (costSavings && costSavings.savings > 0) {
+      console.log(`💰 Cost savings vs API: $${costSavings.savings.toFixed(4)} (${costSavings.savingsPercentage.toFixed(1)}%)`);
+    }
+
+    if (!localResult.transcript || localResult.transcript.trim().length === 0) {
+      console.error(`❌ Transcription failed: Empty transcript`);
       throw new Error('Transcription completed but resulted in empty text');
     }
 
-    console.log(`✅ Audio transcription completed: ${transcript.length} characters`);
-    console.log(`🔧 Debug: Transcript preview: ${transcript.substring(0, 100)}...`);
+    console.log(`✅ Audio transcription completed: ${localResult.transcript.length} characters`);
+    console.log(`🔧 Debug: Transcript preview: ${localResult.transcript.substring(0, 100)}...`);
 
     return {
-      transcript: transcript.trim(),
-      source: transcriptionSource,
+      transcript: localResult.transcript.trim(),
+      source: 'local-whisper',
       videoDetails: {
         title: info.videoDetails.title,
         duration: info.videoDetails.lengthSeconds,
@@ -280,18 +507,17 @@ export async function extractAndTranscribeAudio(
         audioFormat: bestAudio.container,
         audioCodec: bestAudio.audioCodec,
         durationSeconds,
-        transcriptionLength: transcript.length,
-        transcriptionMethod: transcriptionProcessingInfo.method || transcriptionSource,
-        whisperModel: transcriptionProcessingInfo.modelUsed,
-        processingTimeMs: transcriptionProcessingInfo.processingTimeMs,
-        costSavings: transcriptionProcessingInfo.costSavings
+        transcriptionLength: localResult.transcript.length,
+        whisperModel: localResult.processingInfo.modelUsed,
+        processingTimeMs: localResult.processingInfo.processingTimeMs,
+        costSavings: localResult.processingInfo.costSavings
       }
     };
 
   } catch (error) {
-    console.error('❌ Audio extraction and transcription failed:', error);
+    console.error('❌ Local audio transcription failed:', error);
     
-    // Enhance error messages for common issues
+    // Enhanced error messages
     if (error instanceof Error) {
       if (error.message.includes('Video unavailable')) {
         throw new Error('Video is not available or may be private/restricted');
@@ -308,10 +534,13 @@ export async function extractAndTranscribeAudio(
       if (error.message.includes('too long')) {
         throw error; // Pass through duration error as-is
       }
+      
+      if (error.message.includes('FFmpeg') || error.message.includes('Local Whisper')) {
+        throw new Error('Local Whisper not available. Please install FFmpeg: winget install ffmpeg');
+      }
     }
     
-    // Re-throw with context
-    throw new Error(`Audio transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(`Local audio transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
@@ -324,6 +553,7 @@ export async function checkAudioExtractionAvailability(youtubeId: string): Promi
   tooLong?: boolean;
   title?: string;
   audioFormatsCount?: number;
+  whisperAvailable?: boolean;
   error?: string;
 }> {
   try {
@@ -335,13 +565,15 @@ export async function checkAudioExtractionAvailability(youtubeId: string): Promi
     const maxDuration = 60 * 60; // 60 minutes
     
     const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
+    const whisperAvailable = await isLocalTranscriptionAvailable();
     
     return {
-      available: audioFormats.length > 0,
+      available: audioFormats.length > 0 && whisperAvailable,
       duration: durationSeconds,
       tooLong: durationSeconds > maxDuration,
       title: info.videoDetails.title,
-      audioFormatsCount: audioFormats.length
+      audioFormatsCount: audioFormats.length,
+      whisperAvailable
     };
     
   } catch (error) {

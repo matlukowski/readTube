@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateRequest } from '@/lib/auth-helpers';
 import { extractAndTranscribeAudio, checkAudioExtractionAvailability } from '@/lib/audio-extractor';
 
-// Audio extraction and transcription endpoint using Gladia API
+// Audio extraction and transcription endpoint using local Whisper
 export async function POST(request: NextRequest) {
   try {
     const { userId } = await authenticateRequest(request);
@@ -68,10 +68,8 @@ export async function POST(request: NextRequest) {
 // GET endpoint to check if audio extraction is available for a video
 export async function GET(request: NextRequest) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const authResult = await authenticateRequest(request);
+    const user = authResult.user;
 
     const youtubeId = request.nextUrl.searchParams.get('id');
     

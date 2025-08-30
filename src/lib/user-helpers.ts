@@ -8,9 +8,9 @@ import { currentUser } from '@clerk/nextjs/server';
 
 export interface DatabaseUser {
   id: string;
-  clerkId: string;
+  clerkId: string | null;
   email: string;
-  name?: string;
+  name: string | null;
   createdAt: Date;
   updatedAt: Date;
   minutesUsed: number;

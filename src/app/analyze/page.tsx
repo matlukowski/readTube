@@ -117,12 +117,12 @@ function AnalyzeContent() {
       let transcript = null;
       let transcriptSource = 'server';
 
-      // Step 2: Process transcript with Gladia API
-      console.log('🚀 Starting Gladia API transcription...');
+      // Step 2: Process transcript with Local Whisper
+      console.log('🚀 Starting Local Whisper transcription...');
       const transcriptResponse = await apiPost('/api/transcribe', { 
         youtubeId, 
         language
-      });
+      }, { timeout: 600000 }); // 10 minutes for Whisper model loading/processing (long videos)
 
       if (!transcriptResponse.success) {
         const errorData = transcriptResponse;

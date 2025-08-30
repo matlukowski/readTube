@@ -13,13 +13,10 @@ export async function POST(request: NextRequest) {
       }, { status: 503 });
     }
 
-    const { userId } = await authenticateRequest(request);
+    const authResult = await authenticateRequest(request);
+    const user = authResult.user;
 
-    // Get user from database
-    const user = await getOrCreateUser();
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
+    // User is already validated by authenticateRequest
 
     const origin = request.headers.get('origin') || 'http://localhost:3000';
     
